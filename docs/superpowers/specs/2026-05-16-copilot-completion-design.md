@@ -198,6 +198,8 @@ class GhostTextProvider implements IGhostTextProvider {
 | `promptTemplate` | string | `"<|fim_prefix|>{prefix}<|fim_suffix|>{suffix}<|fim_middle|>"` | FIM prompt 模板 |
 | `capabilities.limits.max_output_tokens` | number | `256` | 最大输出 token（硬上限，算法逻辑确定的 token 数未超过此值时以算法为准） |
 | `capabilities.limits.max_context_window_tokens` | number | `128000` | 最大上下文窗口 |
+| `suffixOverlapThreshold` | number | `0.6` | 后缀重叠裁剪相似度阈值 |
+| `suffixOverlapType` | enum | `"low"` | 后缀重叠裁剪类型: `"low"` 或 `"high"` |
 
 ### NES 配置 (`cc-completion.nes.*`)
 
@@ -381,34 +383,81 @@ NextEditProvider (有状态编排器)
 
 ---
 
-## WebView 状态栏面板
+## QuickPick 状态栏控制
 
 ### 按钮
 
-- 位置：VS Code 状态栏
-- 显示：根据状态显示对应图标/文字
-- 点击：打开 WebView 面板
+- 位置：VS Code 状态栏，靠右对齐
+- 显示：`$(sparkle) CC [G/N]` — G=GHOST, N=NES 当前状态
+- 点击：弹出 `vscode.window.showQuickPick` 下拉菜单
+- 点击：弹出 `vscode.window.showQuickPick`
 
-### 面板
+### QuickPick 菜单
 
 ```
-╔══════════════════════════════════════╗
-║  CC Completion 设置             ║
-╠══════════════════════════════════════╣
-║  Ghost Inline Completion (GHOST)     ║
-║  FIM 模板补全代码                     ║
-║  [ ON ]  点击切换                     ║
-║  ─────────────────────────────       ║
-║  Next Edit Suggestion (NES)          ║
-║  预测并提示下一个编辑位置              ║
-║  [ ON ]  点击切换                     ║
-╚══════════════════════════════════════╝
+┌──────────────────────────────────────────────┐
+│  CC Completion                               │
+│                                              │
+│  ☑ Ghost Inline Completion (GHOST): ON       │
+│    Click to disable                          │
+│  ☑ Next Edit Suggestion (NES): ON            │
+│    Click to enable                           │
+└──────────────────────────────────────────────┘
 ```
 
-- 面板切换 → `Configuration.update()` → 触发 `onDidChangeEnabled` → Provider 动态注册/注销
+- 选项切换 → `Configuration.update()` → 触发 `onDidChangeEnabled` → Provider 动态注册/注销
 
 ---
 
+---
+## 取消机制
+
+- 所有 `provideInlineCompletionItems` 传递 VS Code `CancellationToken` 到底层 Provider
+- Provider 内部创建 `AbortController`，通过 `token.onCancellationRequested` 触发 `abort()`
+- LLM 适配器 `send(request, signal?)` 接受 `AbortSignal`，传递给 `fetch(signal)`
+- 取消点覆盖：请求前、缓存查询后、prompt 构建后、网络请求中
+- `AbortError` 被捕获并返回 `undefined`（不报错）
+
+## GHOST 流程缺失补齐
+
+相对于原始实现，当前实现做了以下简化/保留：
+
+| 步骤 | 状态 |
+|------|------|
+| `isInlineSuggestion()` 位置验证 | ✅ 保留 |
+| prefix/suffix 提取 | ✅ 保留 |
+| 缓存查询 (prefix-suffix → choices) | ✅ 保留 |
+| diagnostics + recentEdits 收集 | ✅ 保留 |
+| FIM 模板 prompt 构建 | ✅ 保留 |
+| 策略选择 (singleLine/multiline/tokens) | ✅ 保留 |
+| `CancellationToken` 检查点 | ✅ 已补 |
+| `postProcessChoiceInContext` (缩进规范化) | ✅ 已补 |
+| `adjustLeadingWhitespace` (displayText 分离) | ✅ 已补 |
+| 字符级后缀重叠裁剪 (`_trimCharOverlap`) | ✅ 已补 |
+| 行级后缀重叠裁剪 (`TrimNESResponseSuffixOverlap`) | ✅ 已补 |
+| `suffixCoverage` 计算 | ✅ 已补 |
+| ~~JSX 组件系统 / context providers~~ | ❌ 按需求移除 |
+| ~~Streaming / progressive reveal~~ | ❌ 按需求移除 (stream=false) |
+
+## NES 流程缺失补齐
+
+| 步骤 | 状态 |
+|------|------|
+| PromptPieces + getUserPrompt 构建 | ✅ 保留 |
+| systemPrompt (Xtab275) | ✅ 保留 |
+| 网络请求 (非流式) | ✅ 保留 |
+| 响应解析 (EditWindowOnly) | ✅ 保留 |
+| `CancellationToken` 检查点 | ✅ 已补 |
+| `filterEdit()` (空/noop/空白/注释编辑过滤) | ✅ 已补 |
+| 后缀重叠裁剪 (TrimNESResponseSuffixOverlap) | ✅ 保留 |
+| 编辑缓存 + Rebase | ✅ 保留 |
+| 推测性预取 | ✅ 保留 |
+| ~~完整的 getUserPrompt (diff history, recent files)~~ | ❌ 简化版 |
+| ~~ResponseProcessor.diff() 精确 diff~~ | ❌ 简化版 |
+| ~~光标跳转预测~~ | ❌ 按需求移除 |
+| ~~早期分叉检测~~ | ❌ 按需求移除 |
+
+---
 ## 单元测试
 
 - **框架**: mocha + @vscode/test-cli (沿用脚手架)
