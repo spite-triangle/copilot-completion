@@ -74,7 +74,7 @@ export class StatusBarPanel implements IStatusBarPanel {
             'ccCompletion',
             'CC Completion',
             vscode.ViewColumn.Beside,
-            { enableScripts: true },
+            { enableScripts: true, retainContextWhenHidden: true },
         );
 
         this._panel.onDidDispose(() => { this._panel = undefined; });
@@ -108,13 +108,18 @@ export class StatusBarPanel implements IStatusBarPanel {
         const ghostOn = this._ghostConfig.enabled;
         const nesOn = this._nesConfig.enabled;
 
-        this._panel.webview.html = `<!DOCTYPE html>
+        this._panel.webview.html = this._buildHtml(ghostOn, nesOn);
+    }
+
+    private _buildHtml(ghostOn: boolean, nesOn: boolean): string {
+        return `<!DOCTYPE html>
 <html>
 <head>
-    <meta charset="utf-8">
+    <meta charset="UTF-8">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline';">
     <style>
-        body { font-family: var(--vscode-editor-font-family); padding: 20px; color: var(--vscode-foreground); }
-        h2 { margin-top: 0; }
+        body { font-family: var(--vscode-editor-font-family); padding: 20px; color: var(--vscode-foreground); background: var(--vscode-editor-background); }
+        h2 { margin-top: 0; font-size: 18px; }
         .section {
             padding: 16px; margin-bottom: 12px;
             border: 1px solid var(--vscode-panel-border);
@@ -122,13 +127,13 @@ export class StatusBarPanel implements IStatusBarPanel {
         }
         .section-header { display: flex; justify-content: space-between; align-items: center; }
         .section-title { font-size: 14px; font-weight: 600; }
-        .section-desc { font-size: 12px; color: var(--vscode-descriptionForeground); margin: 4px 0 12px; }
+        .section-desc { font-size: 12px; color: var(--vscode-descriptionForeground); margin: 4px 0 0; }
         .toggle {
             padding: 8px 20px; border: none; border-radius: 4px; cursor: pointer;
-            font-size: 13px; font-weight: 600;
+            font-size: 13px; font-weight: 600; min-width: 56px;
         }
         .toggle.on { background: var(--vscode-button-background); color: var(--vscode-button-foreground); }
-        .toggle.off { background: var(--vscode-input-background); color: var(--vscode-foreground); }
+        .toggle.off { background: var(--vscode-input-background); color: var(--vscode-foreground); border: 1px solid var(--vscode-panel-border); }
     </style>
 </head>
 <body>
@@ -137,29 +142,36 @@ export class StatusBarPanel implements IStatusBarPanel {
         <div class="section-header">
             <div>
                 <div class="section-title">Ghost Inline Completion (GHOST)</div>
+                <div class="section-desc">FIM template-based code completion</div>
             </div>
-            <button class="toggle ${ghostOn ? 'on' : 'off'}"
-                    onclick="toggle('toggleGhost')">
-                ${ghostOn ? 'ON' : 'OFF'}
-            </button>
+            <button id="ghostBtn" class="toggle ${ghostOn ? 'on' : 'off'}">${ghostOn ? 'ON' : 'OFF'}</button>
         </div>
-        <div class="section-desc">FIM template-based code completion</div>
     </div>
     <div class="section">
         <div class="section-header">
             <div>
                 <div class="section-title">Next Edit Suggestion (NES)</div>
+                <div class="section-desc">Predicts the next edit location with smart suggestions</div>
             </div>
-            <button class="toggle ${nesOn ? 'on' : 'off'}"
-                    onclick="toggle('toggleNes')">
-                ${nesOn ? 'ON' : 'OFF'}
-            </button>
+            <button id="nesBtn" class="toggle ${nesOn ? 'on' : 'off'}">${nesOn ? 'ON' : 'OFF'}</button>
         </div>
-        <div class="section-desc">Predicts the next edit location with smart suggestions</div>
     </div>
     <script>
-        const vscode = acquireVsCodeApi();
-        function toggle(command) { vscode.postMessage({ command }); }
+        (function() {
+            var vscode = acquireVsCodeApi();
+            var ghostBtn = document.getElementById('ghostBtn');
+            var nesBtn = document.getElementById('nesBtn');
+            if (ghostBtn) {
+                ghostBtn.addEventListener('click', function() {
+                    vscode.postMessage({ command: 'toggleGhost' });
+                });
+            }
+            if (nesBtn) {
+                nesBtn.addEventListener('click', function() {
+                    vscode.postMessage({ command: 'toggleNes' });
+                });
+            }
+        })();
     </script>
 </body>
 </html>`;
