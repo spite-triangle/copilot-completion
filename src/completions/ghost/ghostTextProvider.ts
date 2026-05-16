@@ -55,12 +55,19 @@ export class GhostTextProvider implements IGhostTextProvider, vscode.InlineCompl
         _context: vscode.InlineCompletionContext,
         _token: vscode.CancellationToken,
     ): Promise<vscode.InlineCompletionItem[] | vscode.InlineCompletionList | undefined> {
-        if (!this._config.enabled) return undefined;
+        const loc = `${document.uri.fsPath}:${position.line + 1}:${position.character + 1}`;
+        if (!this._config.enabled) {
+            this._log.debug(`[GHOST] DISABLED ${loc}`);
+            return undefined;
+        }
 
         const ghostText = this._instantiationService.createInstance(GhostText);
         const result = await ghostText.getInlineCompletions(document, position);
 
-        if (!result || result.completions.length === 0) return undefined;
+        if (!result || result.completions.length === 0) {
+            this._log.debug(`[GHOST] NO_RESULT ${loc}`);
+            return undefined;
+        }
 
         const items = result.completions.map(c => {
             return new vscode.InlineCompletionItem(

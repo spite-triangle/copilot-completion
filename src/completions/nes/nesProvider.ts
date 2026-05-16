@@ -22,27 +22,43 @@ export class NesProvider {
         document: vscode.TextDocument,
         position: vscode.Position,
     ): Promise<NextEditResult | undefined> {
+        const t0 = Date.now();
+        const loc = `${document.uri.fsPath}:${position.line + 1}:${position.character + 1}`;
+        this._log.info(`[NES]  ===== START ${loc} =====`);
+
+        // Step 1: Config check
         if (!this._config.enabled) {
-            this._log.debug('NES is disabled, skipping');
+            this._log.info(`[NES]  SKIP ${loc} — disabled by config`);
             return undefined;
         }
 
-        // Check cache
+        // Step 2: Cache lookup
+        const t1 = Date.now();
         const docText = document.getText();
         const cached = this._cache.lookupNextEdit(document.uri.toString(), document);
         if (cached) {
-            this._log.debug('NES: cache hit');
+            this._log.info(`[NES]  CACHE_HIT ${loc} edit=${cached.edit.length}ch age=${Date.now() - cached.cacheTime}ms total=${Date.now() - t0}ms`);
+            this._log.debug(`[NES]  ${loc} cached_edit="${this._trunc(cached.edit, 100)}"`);
             return this._buildResult(cached.edit, document, position);
         }
+        this._log.debug(`[NES]  ${loc} cache_miss [${Date.now() - t1}ms]`);
 
-        // Build prompt
+        // Step 3: Build prompt pieces
+        const t2 = Date.now();
         const promptPieces = this._buildPromptPieces(document, position);
+        this._log.debug(`[NES]  ${loc} edit_window L${promptPieces.editWindowRange.startLine + 1}-L${promptPieces.editWindowRange.endLineExclusive} area_around L${promptPieces.areaAroundRange.startLine + 1}-L${promptPieces.areaAroundRange.endLineExclusive} lang=${promptPieces.languageContext} [${Date.now() - t2}ms]`);
+
+        // Step 4: Build user prompt
+        const t3 = Date.now();
         const userPrompt = this._buildUserPrompt(promptPieces);
         const systemPrompt = pickSystemPrompt(PromptingStrategy.Xtab275);
+        this._log.debug(`[NES]  ${loc} system_prompt=${systemPrompt.length}ch user_prompt=${userPrompt.length}ch [${Date.now() - t3}ms]`);
 
-        // Send request
+        // Step 5: Network request
+        const t4 = Date.now();
         const endpoint = this._config.supportedEndpoint;
         const adapter = this._llmManager.getAdapter(endpoint);
+        this._log.debug(`[NES]  ${loc} endpoint=${endpoint} model=${this._config.model} max_tokens=${this._config.maxOutputTokens}`);
 
         try {
             const response = await adapter.send({
@@ -56,31 +72,39 @@ export class NesProvider {
                     thinking: this._config.capabilities.supports.thinking,
                 },
             });
+            const networkMs = Date.now() - t4;
+            this._log.info(`[NES]  ${loc} NETWORK finish=${response.finishReason} text=${response.text.length}ch usage=${JSON.stringify(response.usage)} [${networkMs}ms]`);
+            this._log.debug(`[NES]  ${loc} raw_response="${this._trunc(response.text, 200)}"`);
 
-            // Parse response
+            // Step 6: Parse response
             const parsed = handleEditWindowOnly(response.text);
             const editText = parsed.lines.join('\n');
+            this._log.debug(`[NES]  ${loc} parsed lines=${parsed.lines.length} edit=${editText.length}ch`);
 
             if (!editText.trim()) {
-                this._log.debug('NES: empty edit from model');
+                this._log.info(`[NES]  ${loc} EMPTY_EDIT — model returned no content total=${Date.now() - t0}ms`);
                 return undefined;
             }
 
-            // Apply suffix overlap trimming
+            // Step 7: Suffix overlap trimming (line-level)
             const trimmer = new TrimNESResponseSuffixOverlap(
                 this._config.suffixOverlapThreshold,
                 this._config.suffixOverlapType,
             );
-            const suffixLines = document.getText(
+            const suffixText = document.getText(
                 new vscode.Range(position, document.lineAt(document.lineCount - 1).range.end)
-            ).split('\n');
+            );
+            const suffixLines = suffixText.split('\n');
             const overlapCount = trimmer.calculateOverlap(parsed.lines, suffixLines);
             const finalLines = overlapCount > 0
                 ? parsed.lines.slice(0, parsed.lines.length - overlapCount)
                 : parsed.lines;
+            if (overlapCount > 0) {
+                this._log.info(`[NES]  ${loc} suffix_trim overlap=${overlapCount} lines threshold=${this._config.suffixOverlapThreshold} type=${this._config.suffixOverlapType}`);
+            }
             const finalEdit = finalLines.join('\n');
 
-            // Cache result
+            // Step 8: Cache result
             this._cache.setKthNextEdit(document.uri.toString(), {
                 docId: document.uri.toString(),
                 docContentHash: this._hash(docText),
@@ -92,9 +116,12 @@ export class NesProvider {
                 cacheTime: Date.now(),
             });
 
+            const totalMs = Date.now() - t0;
+            this._log.info(`[NES]  ${loc} RESULT edit=${finalEdit.length}ch preview="${this._trunc(finalEdit, 100)}" total=${totalMs}ms`);
+
             return this._buildResult(finalEdit, document, position);
         } catch (err) {
-            this._log.error(`NES request failed: ${err}`);
+            this._log.error(`[NES]  ${loc} ERROR after ${Date.now() - t0}ms: ${err}`);
             return undefined;
         }
     }
@@ -130,7 +157,6 @@ export class NesProvider {
     }
 
     private _buildUserPrompt(pieces: PromptPieces): string {
-        // Build prompt in the same format as the original Xtab275 promptCrafting
         const doc = pieces.currentDocument;
         const docLines = doc.text.split('\n');
 
@@ -146,24 +172,20 @@ export class NesProvider {
 
         let prompt = '';
 
-        // Edit window
         prompt += '<edit_window>\n';
         prompt += '###remain edit start boundary line###\n';
         prompt += editWindowLines.join('\n');
         prompt += '\n###remain edit end boundary line###\n';
         prompt += '</edit_window>\n\n';
 
-        // Area around
         prompt += '<area_around>\n';
         prompt += areaAroundLines.join('\n');
         prompt += '\n</area_around>\n\n';
 
-        // Language context
         if (pieces.languageContext) {
             prompt += `Language: ${pieces.languageContext}\n`;
         }
 
-        // Cursor location
         prompt += `Cursor is at line ${doc.cursorLine}, column ${doc.cursorColumn}\n`;
 
         return prompt;
@@ -189,5 +211,10 @@ export class NesProvider {
             hash |= 0;
         }
         return hash.toString(36);
+    }
+
+    private _trunc(s: string, max: number): string {
+        const escaped = s.replace(/\n/g, '\\n').replace(/\r/g, '\\r');
+        return escaped.length <= max ? escaped : escaped.substring(0, max) + '…';
     }
 }

@@ -39,26 +39,44 @@ export class GhostTextComputer {
         position: vscode.Position,
         isSpeculative: boolean = false,
     ): Promise<GhostTextResult | undefined> {
+        const t0 = Date.now();
+        const loc = `${document.uri.fsPath}:${position.line + 1}:${position.character + 1}`;
+        this._log.info(`[GHOST] ===== START ${loc} speculative=${isSpeculative} =====`);
+
+        // Step 1: Config check
         if (!this._config.enabled) {
-            this._log.debug('GHOST is disabled, skipping');
+            this._log.info(`[GHOST] SKIP ${loc} — disabled by config`);
             return undefined;
         }
 
+        // Step 2: Extract prefix/suffix
+        const t1 = Date.now();
         const prefix = document.getText(new vscode.Range(new vscode.Position(0, 0), position));
         const suffix = document.getText(new vscode.Range(position, document.lineAt(document.lineCount - 1).range.end));
+        this._log.debug(`[GHOST] ${loc} prefix=${prefix.length}ch suffix=${suffix.length}ch [${Date.now() - t1}ms]`);
+        this._log.debug(`[GHOST] ${loc} prefix_tail="${this._trunc(prefix, 80)}"`);
+        this._log.debug(`[GHOST] ${loc} suffix_head="${this._trunc(suffix, 80)}"`);
 
+        // Step 3: Cache lookup
+        const t2 = Date.now();
         const cached = this._cache.findAll(prefix, suffix);
         if (cached.length > 0) {
-            this._log.debug('GHOST: cache hit');
+            this._log.info(`[GHOST] CACHE_HIT ${loc} count=${cached.length} [${Date.now() - t2}ms] total=${Date.now() - t0}ms`);
             return {
                 completions: cached.map(c => this._toGhostCompletion(c)),
                 resultType: ResultType.Cache,
                 suffixCoverage: 0,
             };
         }
+        this._log.debug(`[GHOST] ${loc} cache_miss [${Date.now() - t2}ms]`);
 
+        // Step 4: Collect context
+        const t3 = Date.now();
         const diagnostics = this._collectDiagnostics(document, position);
+        this._log.debug(`[GHOST] ${loc} diagnostics=${diagnostics.length} recentEdits=${this._recentEdits.recentEdits.length} [${Date.now() - t3}ms]`);
 
+        // Step 5: Build prompt
+        const t4 = Date.now();
         const prompt = this._promptFactory.createPrompt({
             template: this._config.promptTemplate,
             prefix,
@@ -67,11 +85,16 @@ export class GhostTextComputer {
             diagnostics,
             recentEdits: this._recentEdits.recentEdits,
         });
+        this._log.debug(`[GHOST] ${loc} prompt=${prompt.length}ch model=${this._config.model} template="${this._trunc(this._config.promptTemplate, 60)}" [${Date.now() - t4}ms]`);
 
+        // Step 6: Determine strategy
         const isSingleLine = suffix.startsWith('\n') || suffix.startsWith('\r\n') || suffix.trim() === '';
         const maxTokens = this._config.maxOutputTokens;
         const effectiveTokens = Math.min(isSingleLine ? 64 : maxTokens, maxTokens);
+        this._log.debug(`[GHOST] ${loc} strategy singleLine=${isSingleLine} tokens=${effectiveTokens}/${maxTokens}`);
 
+        // Step 7: Network request
+        const t5 = Date.now();
         const adapter = this._llmManager.getAdapter('/v1/completions');
         try {
             const response = await adapter.send({
@@ -80,17 +103,26 @@ export class GhostTextComputer {
                 temperature: 0.2,
                 stop: isSingleLine ? ['\n'] : undefined,
             });
+            const networkMs = Date.now() - t5;
+            this._log.info(`[GHOST] ${loc} NETWORK status=${response.finishReason} text=${response.text.length}ch usage=${JSON.stringify(response.usage)} [${networkMs}ms]`);
+            this._log.debug(`[GHOST] ${loc} raw_response="${this._trunc(response.text, 120)}"`);
 
-            // Block trim
+            // Step 8: Block trim
+            const rawText = response.text;
             const blockTrimmedText = isSingleLine
-                ? new TerseBlockTrimmer().trim(response.text)
-                : new VerboseBlockTrimmer().trim(response.text);
+                ? new TerseBlockTrimmer().trim(rawText)
+                : new VerboseBlockTrimmer().trim(rawText);
+            if (blockTrimmedText !== rawText) {
+                this._log.debug(`[GHOST] ${loc} block_trim ${rawText.length}→${blockTrimmedText.length}ch singleLine=${isSingleLine}`);
+            }
 
-            // Character-level suffix overlap — trim completion tail that matches suffix head
-            // Fixes `for()` where model outputs `int i=0;...){` and suffix is `)`
+            // Step 9: Character-level suffix overlap trim
             const charTrimmedText = this._trimCharOverlap(blockTrimmedText, suffix);
+            if (charTrimmedText !== blockTrimmedText) {
+                this._log.info(`[GHOST] ${loc} char_trim ${blockTrimmedText.length}→${charTrimmedText.length}ch removed="${this._trunc(blockTrimmedText.slice(charTrimmedText.length), 40)}"`);
+            }
 
-            // Line-level suffix overlap — TrimNESResponseSuffixOverlap for multi-line dedup
+            // Step 10: Line-level suffix overlap trim
             const completionLines = charTrimmedText.split('\n');
             const suffixLines = suffix.split('\n');
             const overlapTrimmer = new TrimNESResponseSuffixOverlap(
@@ -101,10 +133,15 @@ export class GhostTextComputer {
             const trimmedLines = lineOverlapCount > 0
                 ? completionLines.slice(0, completionLines.length - lineOverlapCount)
                 : completionLines;
+            if (lineOverlapCount > 0) {
+                this._log.info(`[GHOST] ${loc} line_trim overlap=${lineOverlapCount} lines threshold=${this._config.suffixOverlapThreshold} type=${this._config.suffixOverlapType}`);
+            }
             const trimmedText = trimmedLines.join('\n');
 
             const finalText = trimmedText.length > 0 ? trimmedText : charTrimmedText;
+            this._log.info(`[GHOST] ${loc} RESULT resultType=Network final=${finalText.length}ch result="${this._trunc(finalText, 100)}" total=${Date.now() - t0}ms`);
 
+            // Step 11: Cache & return
             const choices: CompletionChoice[] = [{
                 text: finalText,
                 finishReason: response.finishReason,
@@ -117,7 +154,7 @@ export class GhostTextComputer {
                 suffixCoverage: lineOverlapCount,
             };
         } catch (err) {
-            this._log.error(`GHOST request failed: ${err}`);
+            this._log.error(`[GHOST] ${loc} ERROR after ${Date.now() - t0}ms: ${err}`);
             return undefined;
         }
     }
@@ -126,13 +163,11 @@ export class GhostTextComputer {
     _trimCharOverlap(completion: string, suffix: string): string {
         if (!completion || !suffix) return completion;
 
-        // Compare first line only — FIM completions span the cursor's line
         const completionFirstLine = completion.split('\n')[0];
         const suffixFirstLine = suffix.split('\n')[0];
 
         if (!completionFirstLine || !suffixFirstLine) return completion;
 
-        // Find the longest suffix of completion's first line that is also a prefix of suffix's first line
         const maxLen = Math.min(completionFirstLine.length, suffixFirstLine.length);
         for (let len = maxLen; len > 0; len--) {
             const suffixHead = suffixFirstLine.substring(0, len);
@@ -164,5 +199,10 @@ export class GhostTextComputer {
                 severity: d.severity === vscode.DiagnosticSeverity.Error ? 'error' as const : 'warning' as const,
                 message: d.message,
             }));
+    }
+
+    private _trunc(s: string, max: number): string {
+        const escaped = s.replace(/\n/g, '\\n').replace(/\r/g, '\\r');
+        return escaped.length <= max ? escaped : escaped.substring(0, max) + '…';
     }
 }
