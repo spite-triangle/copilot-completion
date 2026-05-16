@@ -15,10 +15,9 @@ export class RecentEditsProvider implements IRecentEditsProvider {
     private _recentEdits: string[] = [];
     private readonly _maxEntries = 10;
     private _disposables: vscode.Disposable[] = [];
-    private _trackedDocument: vscode.TextDocument | undefined;
 
     constructor(
-        private readonly _log: ILogService,
+        @ILogService private readonly _log: ILogService,
     ) {}
 
     get recentEdits(): string[] {
@@ -28,7 +27,6 @@ export class RecentEditsProvider implements IRecentEditsProvider {
     trackDocument(document: vscode.TextDocument): void {
         for (const d of this._disposables) { d.dispose(); }
         this._disposables = [];
-        this._trackedDocument = document;
 
         this._disposables.push(
             vscode.workspace.onDidChangeTextDocument(e => {
