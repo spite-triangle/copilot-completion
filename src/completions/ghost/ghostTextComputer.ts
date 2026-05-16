@@ -122,22 +122,27 @@ export class GhostTextComputer {
         }
     }
 
-    private _trimCharOverlap(completion: string, suffix: string): string {
+    // Exported for unit testing
+    _trimCharOverlap(completion: string, suffix: string): string {
         if (!completion || !suffix) return completion;
 
-        // Find the longest suffix of `completion` that matches a prefix of `suffix`
-        // This trims character-by-character overlap at the completion/suffix boundary
-        let maxOverlap = 0;
-        const maxCheck = Math.min(completion.length, suffix.length);
-        for (let n = maxCheck; n > 0; n--) {
-            const completionTail = completion.slice(completion.length - n);
-            const suffixHead = suffix.slice(0, n);
-            if (completionTail === suffixHead) {
-                maxOverlap = n;
-                break;
+        // Compare first line only — FIM completions span the cursor's line
+        const completionFirstLine = completion.split('\n')[0];
+        const suffixFirstLine = suffix.split('\n')[0];
+
+        if (!completionFirstLine || !suffixFirstLine) return completion;
+
+        // Find the longest suffix of completion's first line that is also a prefix of suffix's first line
+        const maxLen = Math.min(completionFirstLine.length, suffixFirstLine.length);
+        for (let len = maxLen; len > 0; len--) {
+            const suffixHead = suffixFirstLine.substring(0, len);
+            if (completionFirstLine.endsWith(suffixHead)) {
+                const trimmedFirstLine = completionFirstLine.substring(0, completionFirstLine.length - len);
+                const restLines = completion.split('\n').slice(1);
+                return [trimmedFirstLine, ...restLines].join('\n');
             }
         }
-        return maxOverlap > 0 ? completion.slice(0, completion.length - maxOverlap) : completion;
+        return completion;
     }
 
     private _toGhostCompletion(choice: CompletionChoice): GhostCompletion {
