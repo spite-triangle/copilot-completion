@@ -51,6 +51,7 @@ src/
 │   │   ├── ghostTextProvider.ts          #   VS Code InlineCompletionItemProvider
 │   │   ├── ghostTextComputer.ts          #   核心 FIM 补全流水线
 │   │   ├── ghostTextStrategy.ts          #   策略选择 (行内/多行/block)
+│   │   ├── inlineSuggestion.ts           #   行内补全位置验证 (3 态逻辑, 移植自源项目)
 │   │   ├── promptFactory.ts              #   模板 + 上下文 prompt 生成
 │   │   ├── recentEditsProvider.ts        #   RecentEdit 记录与查询
 │   │   ├── completionsCache.ts           #   LRU 缓存
@@ -80,7 +81,8 @@ src/
 │   │
 │   └── shared/                           # GHOST/NES 共享
 │       ├── log/
-│       │   └── logService.ts              #   VS Code LogOutputChannel 封装
+│       │   ├── logService.ts              #   VS Code LogOutputChannel 封装
+│       │   └── srcLoc.ts                  #   栈追踪解析 — 日志中输出源码文件名:行号
 │       ├── document/
 │       │   ├── documentTracker.ts        #   文档变更跟踪
 │       │   └── textDocumentManager.ts    #   文档适配器
@@ -295,7 +297,7 @@ interface LLMResponse {
 
 ```
 GhostTextComputer
-  1. 位置验证 → isInlineSuggestion()
+  1. 位置验证 → `isInlineSuggestionFromTextAfterCursor()` (3 态: false=行尾/true=行中闭合符号/undefined=中止)
   2. 上下文收集 → 文件 prefix/suffix + diagnostics + languageId + recentEdits
   3. Prompt 生成 → GhostPromptFactory.createPrompt()
   4. 策略选择 → GhostTextStrategy (行内/多行/block)
@@ -424,7 +426,7 @@ NextEditProvider (有状态编排器)
 
 | 步骤 | 状态 |
 |------|------|
-| `isInlineSuggestion()` 位置验证 | ✅ 保留 |
+| `isInlineSuggestion()` 位置验证 (3 态: false/true/undefined) | ✅ 移植自源项目 `inlineSuggestion.ts` |
 | prefix/suffix 提取 | ✅ 保留 |
 | 缓存查询 (prefix-suffix → choices) | ✅ 保留 |
 | diagnostics + recentEdits 收集 | ✅ 保留 |
