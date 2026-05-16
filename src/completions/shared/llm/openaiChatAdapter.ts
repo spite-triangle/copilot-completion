@@ -1,5 +1,6 @@
 import { ILLMAdapter } from './llmAdapter';
 import { LLMRequest, LLMResponse, LLMError } from './llmRequest';
+import { readSSEStream } from './sseStream';
 
 export class OpenAIChatAdapter implements ILLMAdapter {
     constructor(
@@ -9,49 +10,52 @@ export class OpenAIChatAdapter implements ILLMAdapter {
     ) {}
 
     async send(request: LLMRequest, signal?: AbortSignal): Promise<LLMResponse> {
-        const url = `${this.baseUrl}/v1/chat/completions`;
-        const body = this.buildBody(request);
+        const url = `${this.baseUrl}/chat/completions`;
+        const body = JSON.stringify({
+            model: this.model,
+            messages: request.messages || [],
+            max_tokens: request.max_tokens,
+            temperature: request.temperature,
+            stream: true,
+            ...(request.stop ? { stop: request.stop } : {}),
+        });
+
         const response = await fetch(url, {
             method: 'POST',
-                signal,
+            signal,
             headers: {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${this.apiKey}`,
             },
             body,
         });
+
         if (!response.ok) {
             const text = await response.text();
-            throw new LLMError(`OpenAI chat request failed: ${response.status}`, response.status, text);
+            throw new LLMError(`OpenAI chat request failed: ${response.status}`, response.status, text + body);
         }
-        const json = await response.json() as Record<string, unknown>;
-        return this.parseResponse(json);
+
+        const ct = response.headers.get('content-type') || '';
+        if (ct.includes('text/event-stream')) {
+            let text = '';
+            let finishReason = 'stop';
+            await readSSEStream(response, signal, json => {
+                const choice = json.choices?.[0];
+                if (choice?.delta?.content) text += choice.delta.content;
+                if (choice?.finish_reason) finishReason = choice.finish_reason;
+            });
+            return { text, finishReason };
+        }
+        return this._parseJSON(await response.text());
     }
 
-    buildBody(request: LLMRequest): string {
-        const body: Record<string, unknown> = {
-            model: this.model,
-            messages: request.messages || [],
-            max_tokens: request.max_tokens,
-            temperature: request.temperature,
-            stream: false,
-        };
-        if (request.stop) { body.stop = request.stop; }
-        return JSON.stringify(body);
-    }
-
-    parseResponse(json: Record<string, unknown>): LLMResponse {
+    private _parseJSON(raw: string): LLMResponse {
+        const json = JSON.parse(raw) as Record<string, unknown>;
         const choices = json.choices as Array<Record<string, unknown>>;
-        const choice = choices[0];
-        const message = choice.message as Record<string, string>;
+        const message = choices[0]?.message as Record<string, string> | undefined;
         return {
-            text: message.content,
-            finishReason: choice.finish_reason as string,
-            usage: json.usage ? {
-                prompt_tokens: (json.usage as Record<string, number>).prompt_tokens,
-                completion_tokens: (json.usage as Record<string, number>).completion_tokens,
-                total_tokens: (json.usage as Record<string, number>).total_tokens,
-            } : undefined,
+            text: message?.content || '',
+            finishReason: choices[0]?.finish_reason as string || 'stop',
         };
     }
 }

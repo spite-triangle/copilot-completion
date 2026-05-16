@@ -13,8 +13,11 @@ import { TerseBlockTrimmer, VerboseBlockTrimmer } from './blockTrimmer';
 import { TrimNESResponseSuffixOverlap } from '../nes/suffixOverlapTrim';
 import { DiagnosticSummary, GhostCompletion } from './types';
 import { ResultType } from './resultType';
-import { srcLoc } from '../shared/log/srcLoc';
 import { isInlineSuggestionFromTextAfterCursor } from './inlineSuggestion';
+
+// Module-level rate limiting (matches original fetch.ts design)
+let lastRequestTime = 0;
+let lastTimeoutId: ReturnType<typeof setTimeout> | null = null;
 
 export interface GhostTextResult {
     completions: GhostCompletion[];
@@ -43,18 +46,17 @@ export class GhostTextComputer {
         isSpeculative: boolean = false,
     ): Promise<GhostTextResult | undefined> {
         const t0 = Date.now();
-        const loc = `${document.uri.fsPath}:${position.line + 1}:${position.character + 1}`;
-        this._log.info(`[GHOST] ${srcLoc()} |  ===== START ${loc} speculative=${isSpeculative} =====`);
+        this._log.info(`[GHOST] ===== START speculative=${isSpeculative} =====`);
 
         // Step 0: Check cancellation before any work
         if (token?.isCancellationRequested) {
-            this._log.info(`[GHOST] ${srcLoc()} |  CANCEL ${loc} before_start`);
+            this._log.info(`[GHOST] CANCEL before_start`);
             return undefined;
         }
 
         // Step 1: Config check
         if (!this._config.enabled) {
-            this._log.info(`[GHOST] ${srcLoc()} |  SKIP ${loc} — disabled by config`);
+            this._log.info(`[GHOST] SKIP — disabled by config`);
             return undefined;
         }
 
@@ -63,47 +65,56 @@ export class GhostTextComputer {
         const textAfterCursor = line.text.substring(position.character);
         const inlineSuggestion = isInlineSuggestionFromTextAfterCursor(textAfterCursor);
         if (inlineSuggestion === undefined) {
-            this._log.debug(`[GHOST] ${srcLoc()} |  SKIP ${loc} — invalid mid-line position (after="${this._trunc(textAfterCursor, 40)}")`);
+            this._log.debug(`[GHOST] SKIP — invalid mid-line position`);
             return undefined;
         }
+        const isMiddleOfTheLine = !!inlineSuggestion;
 
         // Step 3: Extract prefix/suffix
+        // suffix 从光标所在行的下一行开始，光标所在行光标后面的文本不进入 suffix
         const t1 = Date.now();
-        const prefix = document.getText(new vscode.Range(new vscode.Position(0, 0), position));
-        const suffix = document.getText(
-            new vscode.Range(position, document.lineAt(document.lineCount - 1).range.end)
-        );
-        this._log.debug(`[GHOST] ${srcLoc()} |  ${loc} prefix=${prefix.length}ch suffix=${suffix.length}ch [${Date.now() - t1}ms]`);
-        this._log.debug(`[GHOST] ${srcLoc()} |  ${loc} prefix_tail="${this._trunc(prefix, 80)}"`);
-        this._log.debug(`[GHOST] ${srcLoc()} |  ${loc} suffix_head="${this._trunc(suffix, 80)}"`);
+        const prefix = document.getText(new vscode.Range(new vscode.Position(0, 0), position))
+            .replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+        const suffixStartLine = position.line + 1;
+        const suffix ="\n" + (suffixStartLine < document.lineCount
+            ? document.getText(
+                new vscode.Range(
+                    new vscode.Position(suffixStartLine, 0),
+                    document.lineAt(document.lineCount - 1).range.end,
+                ),
+            ).replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+            : '');
+        this._log.debug(`[GHOST] prefix=${prefix.length}ch suffix=${suffix.length}ch [${Date.now() - t1}ms]`);
+        this._log.debug(`[GHOST] prefix_tail="${this._trunc(prefix, 80)}"`);
+        this._log.debug(`[GHOST] suffix_head="${this._trunc(suffix, 80)}"`);
 
         // Step 4: Cache lookup
         const t2 = Date.now();
         const cached = this._cache.findAll(prefix, suffix);
         if (cached.length > 0) {
             const cacheResult = this._postProcessChoiceInContext(cached[0], document, position);
-            this._log.info(`[GHOST] ${srcLoc()} |  CACHE_HIT ${loc} count=${cached.length} result="${this._trunc(cacheResult.text, 60)}" [${Date.now() - t2}ms] total=${Date.now() - t0}ms`);
+            this._log.info(`[GHOST] CACHE_HIT count=${cached.length} result="${this._trunc(cacheResult.text, 60)}" [${Date.now() - t2}ms] total=${Date.now() - t0}ms`);
             return {
-                completions: [this._toGhostCompletion(cacheResult, document, position)],
+                completions: [this._toGhostCompletion(cacheResult, document, position, isMiddleOfTheLine)],
                 resultType: ResultType.Cache,
                 suffixCoverage: this._calcSuffixCoverage(cacheResult.text, suffix),
             };
         }
-        this._log.debug(`[GHOST] ${srcLoc()} |  ${loc} cache_miss [${Date.now() - t2}ms]`);
+        this._log.debug(`[GHOST] cache_miss [${Date.now() - t2}ms]`);
 
         if (token?.isCancellationRequested) {
-            this._log.info(`[GHOST] ${srcLoc()} |  CANCEL ${loc} after_cache_check`);
+            this._log.info(`[GHOST] CANCEL after_cache_check`);
             return undefined;
         }
 
         // Step 5: Collect diagnostics
         const t3 = Date.now();
         const diagnostics = this._collectDiagnostics(document, position);
-        this._log.debug(`[GHOST] ${srcLoc()} |  ${loc} diagnostics=${diagnostics.length} recentEdits=${this._recentEdits.recentEdits.length} [${Date.now() - t3}ms]`);
+        this._log.debug(`[GHOST] diagnostics=${diagnostics.length} recentEdits=${this._recentEdits.recentEdits.length} [${Date.now() - t3}ms]`);
 
         // Step 6: Build prompt
         const t4 = Date.now();
-        const prompt = this._promptFactory.createPrompt({
+        let prompt = this._promptFactory.createPrompt({
             template: this._config.promptTemplate,
             prefix,
             suffix,
@@ -111,43 +122,69 @@ export class GhostTextComputer {
             diagnostics,
             recentEdits: this._recentEdits.recentEdits,
         });
-        this._log.debug(`[GHOST] ${srcLoc()} |  ${loc} prompt=${prompt.length}ch model=${this._config.model} [${Date.now() - t4}ms]`);
+        prompt = prompt.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+        this._log.debug(`[GHOST] prompt=${prompt.length}ch model=${this._config.model} [${Date.now() - t4}ms]`);
+        this._log.debug(`prompt\n ${prompt}`);
 
         if (token?.isCancellationRequested) {
-            this._log.info(`[GHOST] ${srcLoc()} |  CANCEL ${loc} after_prompt_build`);
+            this._log.info(`[GHOST] CANCEL after_prompt_build`);
             return undefined;
         }
 
-        // Step 7: Determine strategy
-        const isSingleLine = suffix.startsWith('\n') || suffix.startsWith('\r\n') || suffix.trim() === '';
-        const maxTokens = this._config.maxOutputTokens;
-        const effectiveTokens = Math.min(isSingleLine ? 64 : maxTokens, maxTokens);
-        this._log.debug(`[GHOST] ${srcLoc()} |  ${loc} strategy singleLine=${isSingleLine} tokens=${effectiveTokens}/${maxTokens}`);
+        // Step 7: Determine strategy (textAfterCursor from Step 2, already computed above)
+        const isSingleLine = textAfterCursor.trim() === '';
+        const maxTokens = Math.min(this._config.maxOutputTokens, 500);
+        const effectiveTokens = Math.min(isSingleLine ? 20 : maxTokens, maxTokens);
+        this._log.debug(`[GHOST] strategy singleLine=${isSingleLine} tokens=${effectiveTokens}/${maxTokens}`);
 
-        // Step 8: Network request with AbortController
+        // Step 8: Network request with rate limiting + AbortController
         const t5 = Date.now();
         const abortController = new AbortController();
-
-        // Wire cancellation token to abort controller
         const cancelListener = token?.onCancellationRequested(() => {
-            this._log.info(`[GHOST] ${srcLoc()} |  ABORT ${loc} — VS Code CancellationToken triggered`);
+            this._log.info(`[GHOST] ABORT — CancellationToken triggered`);
             abortController.abort();
         });
 
-        const adapter = this._llmManager.getAdapter('/v1/completions');
+        // Rate limiting: enforce minimum interval between requests
+        const delayMs = this._config.delay;
+        const waitTime = Math.max(0, delayMs - (Date.now() - lastRequestTime));
+        if (waitTime > 0) {
+            this._log.debug(`[GHOST] rate_limiting delay=${waitTime}ms`);
+            await new Promise<void>((resolve, reject) => {
+                const tid = setTimeout(() => {
+                    if (abortController.signal.aborted) {
+                        const err = new Error('Aborted');
+                        err.name = 'AbortError';
+                        reject(err);
+                        return;
+                    }
+                    lastRequestTime = Date.now();
+                    resolve();
+                }, waitTime);
+                if (lastTimeoutId) clearTimeout(lastTimeoutId);
+                lastTimeoutId = tid;
+            });
+        } else {
+            lastRequestTime = Date.now();
+        }
+
+        const adapter = this._llmManager.getAdapter('completions');
         try {
             const response = await adapter.send(
                 {
                     prompt,
                     max_tokens: effectiveTokens,
-                    temperature: 0.2,
-                    stop: isSingleLine ? ['\n'] : undefined,
+                    temperature: 0,
+                    stop: isSingleLine ? ['\n'] : ['\n\n',"\n```"],
+                    top_p:1,
+                    n:1
                 },
                 abortController.signal,
             );
-            const networkMs = Date.now() - t5;
-            this._log.info(`[GHOST] ${srcLoc()} |  ${loc} NETWORK finish=${response.finishReason} text=${response.text.length}ch usage=${JSON.stringify(response.usage)} [${networkMs}ms]`);
-            this._log.debug(`[GHOST] ${srcLoc()} |  ${loc} raw_response="${this._trunc(response.text, 120)}"`);
+            const networkMs = (Date.now() - t5);
+            this._log.info(`[GHOST] NETWORK finish=${response.finishReason} text=${response.text.length}ch usage=${JSON.stringify(response.usage)} [${networkMs}ms]`);
+            this._log.debug(`[GHOST] raw_response="${this._trunc(response.text, 120)}"`);
+            this._log.debug(`result\n ${response.text}`);
 
             // Step 9: Block trim
             const rawText = response.text;
@@ -155,13 +192,13 @@ export class GhostTextComputer {
                 ? new TerseBlockTrimmer().trim(rawText)
                 : new VerboseBlockTrimmer().trim(rawText);
             if (blockTrimmedText !== rawText) {
-                this._log.debug(`[GHOST] ${srcLoc()} |  ${loc} block_trim ${rawText.length}→${blockTrimmedText.length}ch singleLine=${isSingleLine}`);
+                this._log.debug(`[GHOST] block_trim ${rawText.length}→${blockTrimmedText.length}ch singleLine=${isSingleLine}`);
             }
 
             // Step 10: Character-level suffix overlap
             const charTrimmedText = this._trimCharOverlap(blockTrimmedText, suffix);
             if (charTrimmedText !== blockTrimmedText) {
-                this._log.info(`[GHOST] ${srcLoc()} |  ${loc} char_trim removed="${this._trunc(blockTrimmedText.slice(charTrimmedText.length), 40)}"`);
+                this._log.info(`[GHOST] char_trim removed="${this._trunc(blockTrimmedText.slice(charTrimmedText.length), 40)}"`);
             }
 
             // Step 11: Line-level suffix overlap
@@ -176,7 +213,7 @@ export class GhostTextComputer {
                 ? completionLines.slice(0, completionLines.length - lineOverlapCount)
                 : completionLines;
             if (lineOverlapCount > 0) {
-                this._log.info(`[GHOST] ${srcLoc()} |  ${loc} line_trim overlap=${lineOverlapCount} lines`);
+                this._log.info(`[GHOST] line_trim overlap=${lineOverlapCount} lines`);
             }
             const trimmedText = trimmedLines.join('\n');
 
@@ -192,7 +229,7 @@ export class GhostTextComputer {
             // Step 13: Calculated suffix coverage
             const suffixCoverage = this._calcSuffixCoverage(processed.text, suffix);
 
-            this._log.info(`[GHOST] ${srcLoc()} |  ${loc} RESULT resultType=Network final=${processed.text.length}ch result="${this._trunc(processed.text, 100)}" total=${Date.now() - t0}ms`);
+            this._log.info(`[GHOST] RESULT resultType=Network final=${processed.text.length}ch result="${this._trunc(processed.text, 100)}" total=${Date.now() - t0}ms`);
 
             // Step 14: Cache & return
             const choices: CompletionChoice[] = [{
@@ -202,16 +239,16 @@ export class GhostTextComputer {
             this._cache.append(prefix, suffix, choices[0]);
 
             return {
-                completions: [this._toGhostCompletion(processed, document, position)],
+                completions: [this._toGhostCompletion(processed, document, position, isMiddleOfTheLine)],
                 resultType: ResultType.Network,
                 suffixCoverage,
             };
         } catch (err) {
-            if (err instanceof DOMException && err.name === 'AbortError') {
-                this._log.info(`[GHOST] ${srcLoc()} |  ${loc} ABORTED after ${Date.now() - t0}ms`);
+            if ((err as {name?: string})?.name === 'AbortError') {
+                this._log.info(`[GHOST] ABORTED after ${Date.now() - t0}ms`);
                 return undefined;
             }
-            this._log.error(`[GHOST] ${srcLoc()} |  ${loc} ERROR after ${Date.now() - t0}ms: ${err}`);
+            this._log.error(`[GHOST] ERROR after ${Date.now() - t0}ms: ${err}`);
             return undefined;
         } finally {
             cancelListener?.dispose();
@@ -276,6 +313,7 @@ export class GhostTextComputer {
         choice: CompletionChoice,
         document: vscode.TextDocument,
         position: vscode.Position,
+        isMiddleOfTheLine: boolean,
     ): GhostCompletion {
         const currentLine = document.lineAt(position.line);
         const baseIndent = currentLine.text.substring(0, currentLine.firstNonWhitespaceCharacterIndex);
@@ -286,6 +324,7 @@ export class GhostTextComputer {
             completionText: choice.text,
             displayText,
             displayNeedsWsOffset: position.character > 0,
+            isMiddleOfTheLine,
         };
     }
 

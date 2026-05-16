@@ -7,6 +7,7 @@ export const ConfigKeys = {
         promptTemplate: 'cc-completion.ghost.promptTemplate',
         maxOutputTokens: 'cc-completion.ghost.capabilities.limits.max_output_tokens',
         maxContextWindowTokens: 'cc-completion.ghost.capabilities.limits.max_context_window_tokens',
+        delay: 'cc-completion.ghost.capabilities.limits.delay',
         suffixOverlapThreshold: 'cc-completion.ghost.suffixOverlapThreshold',
         suffixOverlapType: 'cc-completion.ghost.suffixOverlapType',
     },

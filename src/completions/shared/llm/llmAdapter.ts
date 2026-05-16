@@ -1,6 +1,6 @@
 import { createServiceIdentifier } from '../../../di/services';
 import { LLMRequest, LLMResponse } from './llmRequest';
-import { SupportedEndpoint } from '../../../config/nesConfig';
+import { NesSupportedEndpoint } from '../../../config/nesConfig';
 
 export const ILLMAdapterManager = createServiceIdentifier<ILLMAdapterManager>('ILLMAdapterManager');
 
@@ -10,8 +10,8 @@ export interface ILLMAdapter {
 
 export interface ILLMAdapterManager {
     readonly _serviceBrand: undefined;
-    register(endpoint: SupportedEndpoint | '/v1/completions', adapter: ILLMAdapter): void;
-    getAdapter(endpoint: SupportedEndpoint | '/v1/completions'): ILLMAdapter;
+    register(endpoint: NesSupportedEndpoint | 'completions', adapter: ILLMAdapter): void;
+    getAdapter(endpoint: NesSupportedEndpoint | 'completions'): ILLMAdapter;
 }
 
 export class LLMAdapterManager implements ILLMAdapterManager {

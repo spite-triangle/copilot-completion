@@ -59,6 +59,11 @@
           "default": 128000,
           "description": "Max context window tokens"
         },
+        "cc-completion.ghost.capabilities.limits.delay": {
+          "type": "number",
+          "default": 200,
+          "description": "Minimum delay (ms) between GHOST network requests"
+        },
         "cc-completion.ghost.suffixOverlapThreshold": {
           "type": "number",
           "default": 0.6,
@@ -66,7 +71,10 @@
         },
         "cc-completion.ghost.suffixOverlapType": {
           "type": "string",
-          "enum": ["low", "high"],
+          "enum": [
+            "low",
+            "high"
+          ],
           "default": "low",
           "description": "Suffix overlap detection type for GHOST"
         },
@@ -93,11 +101,11 @@
         "cc-completion.nes.supportedEndpoint": {
           "type": "string",
           "enum": [
-            "/chat/completions",
-            "/responses",
-            "/v1/messages"
+            "chat/completions",
+            "responses",
+            "messages"
           ],
-          "default": "/chat/completions",
+          "default": "chat/completions",
           "description": "LLM API endpoint for NES"
         },
         "cc-completion.nes.capabilities.limits.max_output_tokens": {
@@ -119,7 +127,13 @@
           "type": "array",
           "items": {
             "type": "string",
-            "enum": ["minimal", "low", "medium", "high", "xhigh"]
+            "enum": [
+              "minimal",
+              "low",
+              "medium",
+              "high",
+              "xhigh"
+            ]
           },
           "default": [],
           "description": "Supported reasoning effort levels"
@@ -131,7 +145,10 @@
         },
         "cc-completion.nes.suffixOverlapType": {
           "type": "string",
-          "enum": ["low", "high"],
+          "enum": [
+            "low",
+            "high"
+          ],
           "default": "low",
           "description": "Suffix overlap detection type"
         }
@@ -150,16 +167,16 @@
     "test": "vscode-test"
   },
   "devDependencies": {
-    "@types/vscode": "^1.110.0",
     "@types/mocha": "^10.0.10",
-    "@types/node": "22.x",
-    "typescript-eslint": "^8.56.1",
-    "eslint": "^9.39.3",
-    "typescript": "^5.9.3",
-    "ts-loader": "^9.5.4",
-    "webpack": "^5.105.3",
-    "webpack-cli": "^6.0.1",
+    "@types/node": "^22.19.19",
+    "@types/vscode": "^1.110.0",
     "@vscode/test-cli": "^0.0.12",
-    "@vscode/test-electron": "^2.5.2"
+    "@vscode/test-electron": "^2.5.2",
+    "eslint": "^9.39.3",
+    "ts-loader": "^9.5.4",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.56.1",
+    "webpack": "^5.105.3",
+    "webpack-cli": "^6.0.1"
   }
 }

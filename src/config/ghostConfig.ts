@@ -20,6 +20,7 @@ export interface IGhostConfigProvider {
     get promptTemplate(): string;
     get capabilities(): GhostCapabilities;
     get maxOutputTokens(): number;
+    get delay(): number;
     get suffixOverlapThreshold(): number;
     get suffixOverlapType(): 'low' | 'high';
     onDidChangeEnabled(listener: () => void): vscode.Disposable;
@@ -64,6 +65,11 @@ export class VSCodeGhostConfigProvider implements IGhostConfigProvider {
     get maxOutputTokens(): number {
         return vscode.workspace.getConfiguration()
             .get<number>(ConfigKeys.Ghost.maxOutputTokens, 256);
+    }
+
+    get delay(): number {
+        return vscode.workspace.getConfiguration()
+            .get<number>(ConfigKeys.Ghost.delay, 200);
     }
 
     get suffixOverlapThreshold(): number {

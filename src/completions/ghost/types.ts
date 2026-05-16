@@ -3,6 +3,7 @@ export interface GhostCompletion {
     completionText: string;
     displayText: string;
     displayNeedsWsOffset: boolean;
+    isMiddleOfTheLine: boolean;
 }
 
 export interface CompletionResult {

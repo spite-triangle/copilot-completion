@@ -58,9 +58,8 @@ export class NextEditProvider implements INesProvider, vscode.InlineCompletionIt
         _context: vscode.InlineCompletionContext,
         token: vscode.CancellationToken,
     ): Promise<vscode.InlineCompletionItem[] | vscode.InlineCompletionList | undefined> {
-        const loc = `${document.uri.fsPath}:${position.line + 1}:${position.character + 1}`;
         if (!this._config.enabled) {
-            this._log.debug(`[NES]  DISABLED ${loc}`);
+            this._log.debug(`[NES]  DISABLED`);
             return undefined;
         }
 
@@ -68,7 +67,7 @@ export class NextEditProvider implements INesProvider, vscode.InlineCompletionIt
         const result = await provider.provideNextEdit(document, position, token);
 
         if (!result || !result.edit.trim()) {
-            this._log.debug(`[NES]  NO_RESULT ${loc}`);
+            this._log.debug(`[NES]  NO_RESULT`);
             return undefined;
         }
 

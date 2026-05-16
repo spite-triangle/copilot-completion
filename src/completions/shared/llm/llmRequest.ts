@@ -13,6 +13,8 @@ export interface LLMRequest {
     prompt?: string;
     max_tokens: number;
     temperature: number;
+    n?: number;
+    top_p?: number;
     stop?: string[];
     capabilities?: Capabilities;
 }
@@ -37,5 +39,12 @@ export class LLMError extends Error {
     ) {
         super(message);
         this.name = 'LLMError';
+    }
+
+    toString(): string {
+        const parts = [`${this.name}: ${this.message}`];
+        if (this.statusCode !== undefined) parts.push(`status=${this.statusCode}`);
+        if (this.responseBody) parts.push(`body=${this.responseBody}`);
+        return parts.join(' ');
     }
 }

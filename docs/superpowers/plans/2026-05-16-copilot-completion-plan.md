@@ -1936,10 +1936,24 @@ export class GhostTextComputer {
             return undefined;
         }
 
+        // Validate inline suggestion position + extract textAfterCursor
+        const line = document.lineAt(position.line);
+        const textAfterCursor = line.text.substring(position.character);
+        const inlineSuggestion = isInlineSuggestionFromTextAfterCursor(textAfterCursor);
+        if (inlineSuggestion === undefined) {
+            this._log.debug('GHOST: invalid mid-line position');
+            return undefined;
+        }
+
         const prefix = document.getText(new vscode.Range(new vscode.Position(0, 0), position));
-        // Suffix: remaining text on current line + rest of document (keep original, no trim)
-        const lineEnd = document.lineAt(position.line).range.end;
-        const suffix = document.getText(new vscode.Range(position, document.lineAt(document.lineCount - 1).range.end));
+        // Suffix: 从光标行下一行开始，光标同行后面的文本不进入 suffix（避免 FIM 看到同行闭括号）
+        const suffixStartLine = position.line + 1;
+        const suffix = suffixStartLine < document.lineCount
+            ? document.getText(new vscode.Range(
+                new vscode.Position(suffixStartLine, 0),
+                document.lineAt(document.lineCount - 1).range.end,
+            ))
+            : '';
 
         // Check cache + typing-as-suggested
         const cached = this._cache.findAll(prefix, suffix);
@@ -1965,8 +1979,8 @@ export class GhostTextComputer {
             recentEdits: this._recentEdits.recentEdits,
         });
 
-        // Determine strategy (single-line if suffix starts with \n or cursor at EOL)
-        const isSingleLine = suffix.startsWith('\n') || suffix.startsWith('\r\n') || suffix.trim() === '';
+        // Determine strategy: single-line 当光标在行尾时（同行光标后无有效文本）
+        const isSingleLine = textAfterCursor.trim() === '';
 
         const maxTokens = this._config.maxOutputTokens;
         // Algorithm determines actual tokens; cap at configured max

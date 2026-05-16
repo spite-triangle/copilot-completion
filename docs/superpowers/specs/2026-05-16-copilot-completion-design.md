@@ -244,17 +244,25 @@ interface LLMResponse {
 
 ### 四种适配器
 
-| Adapter | Endpoint | 用于 | stream |
-|---------|----------|------|--------|
-| `OpenAIChatAdapter` | `/v1/chat/completions` | NES | **false** |
-| `OpenAIResponseAdapter` | `/v1/responses` | NES | **false** |
-| `AnthropicAdapter` | `/v1/messages` | NES | **false** |
-| `OpenAICompletionAdapter` | `/v1/completions` | GHOST | **false** |
+| Adapter | 资源路径 | 用于 | stream |
+|---------|---------|------|--------|
+| `OpenAIChatAdapter` | `chat/completions` | NES | **true** |
+| `OpenAIResponseAdapter` | `responses` | NES | **true** |
+| `AnthropicAdapter` | `messages` | NES | **true** |
+| `OpenAICompletionAdapter` | `completions` | GHOST | **true** |
 
-- **所有适配器使用 `stream: false`**，返回完整 JSON 响应
-- 纯 `fetch` HTTP 请求，不依赖任何 SDK
+- **所有适配器使用 `stream: true`**，SSE 流式解析（参考 `src/platform/networking/node/stream.ts` 的 `SSEProcessor` / `splitChunk` 模式）
+- 自动检测 `content-type`：`text/event-stream` → SSE 解析，否则 → JSON fallback
+- `request.signal` 每轮 SSE chunk 迭代检查，AbortController 触发时立即终止流
+- 纯 `fetch` + `response.body.pipeThrough(new TextDecoderStream())`，不依赖 SDK
 - NES 通过 `INesConfigProvider.getSupportedEndpoint()` 选择适配器
-- GHOST 固定使用 `/v1/completions`
+- GHOST 固定使用 `completions`
+
+### API 路径
+
+- 用户配置 `baseUrl` 包含 `/v1`，如 `http://127.0.0.1:8080/v1`
+- 适配器拼接资源路径：`${baseUrl}/completions` / `${baseUrl}/chat/completions` 等
+- `supportedEndpoint` 枚举值：`chat/completions` / `responses` / `messages`（不再含 `/v1` 前缀）
 
 ### 适配器职责
 
@@ -272,7 +280,7 @@ interface LLMResponse {
 **简化模板替换**：用户配置模板字符串，运行时替换占位符。
 
 - `{prefix}` → 光标前的代码文本
-- `{suffix}` → 光标后的代码文本（**保持原样，不去除首行起始空格**）
+- `{suffix}` → 光标行下一行开始的代码文本（光标所在行光标后的文本不进入 suffix，避免 FIM 模型将 `)` 等闭合同行字符错误纳入 suffix）
 - 在 prompt 前追加基础上下文：
   - 语言 ID：`// language: <languageId>`
   - Diagnostics 摘要：`// diagnostics: [Line N] <message>`
@@ -298,13 +306,15 @@ interface LLMResponse {
 ```
 GhostTextComputer
   1. 位置验证 → `isInlineSuggestionFromTextAfterCursor()` (3 态: false=行尾/true=行中闭合符号/undefined=中止)
+     └─ true → `isMiddleOfTheLine` 标记，返回 Range 覆盖至行尾替换废弃字符
   2. 上下文收集 → 文件 prefix/suffix + diagnostics + languageId + recentEdits
   3. Prompt 生成 → GhostPromptFactory.createPrompt()
   4. 策略选择 → GhostTextStrategy (行内/多行/block)
   5. 缓存查询 → GhostCompletionsCache
-  6. 网络请求 → OpenAIChatAdapter (/v1/completions, stream:false)
-  7. 后处理 → BlockTrimmer, normalizeIndent
-  8. 返回结果 → vscode.InlineCompletionItem
+  6. 限流延迟 → 模块级 `lastRequestTime` / `lastTimeoutId`，最小间隔 `delay` ms (默认 200)
+  7. 网络请求 → OpenAICompletionAdapter (completions, stream:true, SSE 解析)
+  8. 后处理 → BlockTrimmer, normalizeIndent, _trimCharOverlap, TrimNESResponseSuffixOverlap
+  9. 返回结果 → vscode.InlineCompletionItem (isMiddleOfTheLine → Range 覆盖至行尾)
 ```
 
 ### GHOST 功能范围
@@ -316,7 +326,8 @@ GhostTextComputer
 - Block 修剪 (TerseBlockTrimmer/VerboseBlockTrimmer)
 - 缩进规范化
 - RecentEdits 记录与查询（用户最近文档编辑 diff）
-- ~~遥测反馈上报~~
+- 模块级请求限流（参考原版 fetch.ts `lastRequestTime` + `setTimeout` 模式）
+- 行中补全 Range 修正（光标后有 `)`/`}` 等闭合符号时替换至行尾）
 
 ---
 
@@ -359,7 +370,7 @@ NextEditProvider (有状态编排器)
   │     1. 构建 PromptPieces (文档、编辑窗口、上下文)
   │     2. getUserPrompt() → 用户 prompt 字符串
   │     3. pickSystemPrompt(strategy) → 系统 prompt
-  │     4. LLMAdapter.send() → 非流式请求
+  │     4. LLMAdapter.send() → 流式 SSE 请求 (stream:true)
   │     5. handleEditWindowOnly() → 解析响应
   │     6. diff() → diff 模型输出与编辑窗口
   │     7. suffixOverlapTrim() → 基于 Levenshtein 相似度裁剪后缀重叠行
@@ -414,11 +425,14 @@ NextEditProvider (有状态编排器)
 ---
 ## 取消机制
 
-- 所有 `provideInlineCompletionItems` 传递 VS Code `CancellationToken` 到底层 Provider
-- Provider 内部创建 `AbortController`，通过 `token.onCancellationRequested` 触发 `abort()`
-- LLM 适配器 `send(request, signal?)` 接受 `AbortSignal`，传递给 `fetch(signal)`
-- 取消点覆盖：请求前、缓存查询后、prompt 构建后、网络请求中
-- `AbortError` 被捕获并返回 `undefined`（不报错）
+- VS Code `CancellationToken` 直接透传至管道核心（Provider 层不做额外 AbortController 管理）
+- 发送网络请求前创建 `AbortController`，通过 `token.onCancellationRequested` 触发 `abort()`
+- LLM 适配器 `send(request, signal?)` 接受 `AbortSignal`
+  - 流式路径：`readSSEStream()` 每轮 chunk 迭代检查 `signal?.aborted`
+  - 非流式回退：`fetch(url, { signal })` 原生中断
+- 取消检查点 (3 处)：请求前 `before_start`、缓存查询后 `after_cache_check`、prompt 构建后 `after_prompt_build`
+- `AbortError` 被捕获并返回 `undefined`（不报错），使用 `(err as {name?:string})?.name === 'AbortError'` 兼容所有 Node 版本
+- 流式请求的快速取消：SSE stream 在 signal 触发后停止读取并 `response.body.cancel()`
 
 ## GHOST 流程缺失补齐
 
@@ -438,8 +452,10 @@ NextEditProvider (有状态编排器)
 | 字符级后缀重叠裁剪 (`_trimCharOverlap`) | ✅ 已补 |
 | 行级后缀重叠裁剪 (`TrimNESResponseSuffixOverlap`) | ✅ 已补 |
 | `suffixCoverage` 计算 | ✅ 已补 |
+| 行中补全 Range 修正 (`isMiddleOfTheLine`) | ✅ 光标后有闭合符号时替换至行尾 |
+| 模块级请求限流 (`lastRequestTime` + `delay`) | ✅ 参考原版 fetch.ts 设计 |
 | ~~JSX 组件系统 / context providers~~ | ❌ 按需求移除 |
-| ~~Streaming / progressive reveal~~ | ❌ 按需求移除 (stream=false) |
+| ~~Streaming / progressive reveal~~ | ✅ 已启用 (stream=true, SSE 解析) |
 
 ## NES 流程缺失补齐
 
@@ -447,7 +463,7 @@ NextEditProvider (有状态编排器)
 |------|------|
 | PromptPieces + getUserPrompt 构建 | ✅ 保留 |
 | systemPrompt (Xtab275) | ✅ 保留 |
-| 网络请求 (非流式) | ✅ 保留 |
+| 网络请求 (流式 SSE) | ✅ stream:true, SSE 解析 |
 | 响应解析 (EditWindowOnly) | ✅ 保留 |
 | `CancellationToken` 检查点 | ✅ 已补 |
 | `filterEdit()` (空/noop/空白/注释编辑过滤) | ✅ 已补 |
@@ -479,8 +495,19 @@ NextEditProvider (有状态编排器)
 | 2026-05-16 | LLM Adapter `AbortSignal` | `ILLMAdapter.send(request, signal?)` 支持可选 AbortSignal |
 | 2026-05-16 | GHOST 缺失步骤补齐 | `postProcessChoiceInContext` (缩进规范) / `adjustLeadingWhitespace` (displayText 分离) / `_calcSuffixCoverage` |
 | 2026-05-16 | NES 缺失步骤补齐 | `_shouldRejectEdit` (空/noop/空白/注释编辑过滤) / `_getEditWindowLines` |
-| 2026-05-16 | 源码行号日志 | `srcLoc()` 工具函数 — 从 `Error().stack` 提取调用者 `文件名:行号`，格式 `ghostTextComputer.ts:47` |
+| 2026-05-16 | 源码行号日志 | `srcLoc()` 工具函数 — 从 `Error().stack` 提取调用者 `文件名:行号`。启用 source maps 时返回 `.ts` 位置，否则 fallback 到 `.js`。TS 无编译期宏因此无法在编译时确定行号。 |
 | 2026-05-16 | GHOST suffixOverlap 配置 | 新增 `cc-completion.ghost.suffixOverlapThreshold` (0.6) / `suffixOverlapType` ("low") |
+| 2026-05-16 | GHOST suffix 修正 | suffix 从光标行下一行开始提取，光标同行后面的文本不再进入 suffix（修复 FIM 拼接时闭括号 `)` 错误出现） |
+| 2026-05-16 | `isSingleLine` 策略修正 | 改用 `textAfterCursor.trim() === ''` 判断光标是否在行尾，配合 suffix 修正 |
+| 2026-05-16 | `srcLoc` 修复 | 正则支持 `.js` 文件 fallback（无 source maps 时）；添加编译期限制说明 |
+| 2026-05-16 | 流式 LLM 请求 | 所有适配器改为 `stream: true`，SSE 流式解析 (`sseStream.ts`)，参考原版 `stream.ts` 的 `splitChunk` + `pipeThrough(TextDecoderStream)` 模式。自动检测 content-type 兼容 JSON fallback |
+| 2026-05-16 | API 路径修正 | `baseUrl` 由用户配置完整路径含 `/v1`，适配器只拼接资源路径。`supportedEndpoint` 枚举去掉 `/v1` 前缀 |
+| 2026-05-16 | GHOST 限流 | 模块级 `lastRequestTime` / `lastTimeoutId` 变量，`cc-completion.ghost.capabilities.limits.delay` 配置 (默认 200ms)，参考原版 `fetch.ts` 设计 |
+| 2026-05-16 | GHOST Range 修正 | `GhostCompletion.isMiddleOfTheLine` 字段，行中补全时光标后废弃字符被 Range 覆盖至行尾 |
+| 2026-05-16 | 取消机制精简 | 移除 Provider 层 AbortController 管理，纯 `CancellationToken` 透传。流式路径每轮 `signal?.aborted` 检查，非流式用 `fetch(signal)` |
+| 2026-05-16 | 日志清理 | 移除 `srcLoc()` 调用和文档 `loc` 变量，日志格式 `[模块] 消息`。`LLMError.toString()` 输出 statusCode + responseBody |
+| 2026-05-16 | `LLMError.toString()` | 重写 `toString()` 输出 `name + message + status + body`，方便 `${err}` 模板字符串调试 |
+| 2026-05-17 | `\r\n` → `\n` 统一 | GHOST prefix/suffix/prompt、NES document text/suffix overlap 所有位置做 `.replace(/\r\n/g, '\n')`，消除 Windows CRLF 对 LLM prompt 的影响 |
 
 ---
 
@@ -496,6 +523,7 @@ NextEditProvider (有状态编排器)
 2. **不移植遥测反馈** — 无 telemetry 模块、无 RejectionCollector、无反馈上报
 3. **NES 仅 Xtab275 策略** — 不保留其他 PromptingStrategy
 4. **GHOST 仅 FIM** — 不保留 JSX 组件系统、context providers、similar files、code snippets 等复杂 prompt 组装；保留 RecentEdits 作为 prompt 上下文
-5. **stream: false** — 所有 LLM 请求非流式
+5. **stream: true** — 所有 LLM 请求流式，SSE 解析（参考 `stream.ts`），JSON fallback
 6. **配置分离** — GHOST 和 NES 各自独立的 model/capabilities 配置
-7. **去不掉的前置空格** — suffix 保持与文档一致，不去除首行起始空格
+7. **suffix 起始行** — suffix 从光标所在行的下一行开始，光标同行后面的文本不进入 suffix（避免 `)` 等闭合同行字符错误进入后缀）
+8. **`\r\n` → `\n`** — 所有送入 LLM 的 prompt、prefix、suffix、document text 统一换行为 `\n`，消除 Windows CRLF 影响

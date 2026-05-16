@@ -55,9 +55,8 @@ export class GhostTextProvider implements IGhostTextProvider, vscode.InlineCompl
         _context: vscode.InlineCompletionContext,
         token: vscode.CancellationToken,
     ): Promise<vscode.InlineCompletionItem[] | vscode.InlineCompletionList | undefined> {
-        const loc = `${document.uri.fsPath}:${position.line + 1}:${position.character + 1}`;
         if (!this._config.enabled) {
-            this._log.debug(`[GHOST] DISABLED ${loc}`);
+            this._log.debug(`[GHOST] DISABLED`);
             return undefined;
         }
 
@@ -65,15 +64,15 @@ export class GhostTextProvider implements IGhostTextProvider, vscode.InlineCompl
         const result = await ghostText.getInlineCompletions(document, position, token);
 
         if (!result || result.completions.length === 0) {
-            this._log.debug(`[GHOST] NO_RESULT ${loc}`);
+            this._log.debug(`[GHOST] NO_RESULT`);
             return undefined;
         }
 
         const items = result.completions.map(c => {
-            return new vscode.InlineCompletionItem(
-                c.completionText,
-                new vscode.Range(position, position),
-            );
+            const range = c.isMiddleOfTheLine
+                ? new vscode.Range(position, document.lineAt(position.line).range.end)
+                : new vscode.Range(position, position);
+            return new vscode.InlineCompletionItem(c.completionText, range);
         });
 
         return items;

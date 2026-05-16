@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { createServiceIdentifier } from '../di/services';
 import { ConfigKeys } from './configKeys';
 
-export type SupportedEndpoint = '/chat/completions' | '/responses' | '/v1/messages';
+export type NesSupportedEndpoint = 'chat/completions' | 'responses' | 'messages';
 
 export interface NesCapabilities {
     limits: {
@@ -23,7 +23,7 @@ export interface INesConfigProvider {
     get baseUrl(): string;
     get apiKey(): string;
     get model(): string;
-    get supportedEndpoint(): SupportedEndpoint;
+    get supportedEndpoint(): NesSupportedEndpoint;
     get capabilities(): NesCapabilities;
     get maxOutputTokens(): number;
     get suffixOverlapThreshold(): number;
@@ -50,9 +50,9 @@ export class VSCodeNesConfigProvider implements INesConfigProvider {
         return vscode.workspace.getConfiguration().get<string>(ConfigKeys.Nes.model, 'gpt-4o');
     }
 
-    get supportedEndpoint(): SupportedEndpoint {
+    get supportedEndpoint(): NesSupportedEndpoint {
         return vscode.workspace.getConfiguration()
-            .get<SupportedEndpoint>(ConfigKeys.Nes.supportedEndpoint, '/chat/completions');
+            .get<NesSupportedEndpoint>(ConfigKeys.Nes.supportedEndpoint, 'chat/completions');
     }
 
     get capabilities(): NesCapabilities {
