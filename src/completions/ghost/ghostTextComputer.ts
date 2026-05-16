@@ -13,6 +13,7 @@ import { TerseBlockTrimmer, VerboseBlockTrimmer } from './blockTrimmer';
 import { TrimNESResponseSuffixOverlap } from '../nes/suffixOverlapTrim';
 import { DiagnosticSummary, GhostCompletion } from './types';
 import { ResultType } from './resultType';
+import { srcLoc } from '../shared/log/srcLoc';
 
 export interface GhostTextResult {
     completions: GhostCompletion[];
@@ -42,23 +43,23 @@ export class GhostTextComputer {
     ): Promise<GhostTextResult | undefined> {
         const t0 = Date.now();
         const loc = `${document.uri.fsPath}:${position.line + 1}:${position.character + 1}`;
-        this._log.info(`[GHOST] ===== START ${loc} speculative=${isSpeculative} =====`);
+        this._log.info(`[GHOST] ${srcLoc()} |  ===== START ${loc} speculative=${isSpeculative} =====`);
 
         // Step 0: Check cancellation before any work
         if (token?.isCancellationRequested) {
-            this._log.info(`[GHOST] CANCEL ${loc} before_start`);
+            this._log.info(`[GHOST] ${srcLoc()} |  CANCEL ${loc} before_start`);
             return undefined;
         }
 
         // Step 1: Config check
         if (!this._config.enabled) {
-            this._log.info(`[GHOST] SKIP ${loc} — disabled by config`);
+            this._log.info(`[GHOST] ${srcLoc()} |  SKIP ${loc} — disabled by config`);
             return undefined;
         }
 
         // Step 2: Validate inline suggestion position (isInlineSuggestion)
         if (!this._isInlineSuggestion(document, position)) {
-            this._log.debug(`[GHOST] SKIP ${loc} — not a valid inline suggestion position`);
+            this._log.debug(`[GHOST] ${srcLoc()} |  SKIP ${loc} — not a valid inline suggestion position`);
             return undefined;
         }
 
@@ -68,33 +69,33 @@ export class GhostTextComputer {
         const suffix = document.getText(
             new vscode.Range(position, document.lineAt(document.lineCount - 1).range.end)
         );
-        this._log.debug(`[GHOST] ${loc} prefix=${prefix.length}ch suffix=${suffix.length}ch [${Date.now() - t1}ms]`);
-        this._log.debug(`[GHOST] ${loc} prefix_tail="${this._trunc(prefix, 80)}"`);
-        this._log.debug(`[GHOST] ${loc} suffix_head="${this._trunc(suffix, 80)}"`);
+        this._log.debug(`[GHOST] ${srcLoc()} |  ${loc} prefix=${prefix.length}ch suffix=${suffix.length}ch [${Date.now() - t1}ms]`);
+        this._log.debug(`[GHOST] ${srcLoc()} |  ${loc} prefix_tail="${this._trunc(prefix, 80)}"`);
+        this._log.debug(`[GHOST] ${srcLoc()} |  ${loc} suffix_head="${this._trunc(suffix, 80)}"`);
 
         // Step 4: Cache lookup
         const t2 = Date.now();
         const cached = this._cache.findAll(prefix, suffix);
         if (cached.length > 0) {
             const cacheResult = this._postProcessChoiceInContext(cached[0], document, position);
-            this._log.info(`[GHOST] CACHE_HIT ${loc} count=${cached.length} result="${this._trunc(cacheResult.text, 60)}" [${Date.now() - t2}ms] total=${Date.now() - t0}ms`);
+            this._log.info(`[GHOST] ${srcLoc()} |  CACHE_HIT ${loc} count=${cached.length} result="${this._trunc(cacheResult.text, 60)}" [${Date.now() - t2}ms] total=${Date.now() - t0}ms`);
             return {
                 completions: [this._toGhostCompletion(cacheResult, document, position)],
                 resultType: ResultType.Cache,
                 suffixCoverage: this._calcSuffixCoverage(cacheResult.text, suffix),
             };
         }
-        this._log.debug(`[GHOST] ${loc} cache_miss [${Date.now() - t2}ms]`);
+        this._log.debug(`[GHOST] ${srcLoc()} |  ${loc} cache_miss [${Date.now() - t2}ms]`);
 
         if (token?.isCancellationRequested) {
-            this._log.info(`[GHOST] CANCEL ${loc} after_cache_check`);
+            this._log.info(`[GHOST] ${srcLoc()} |  CANCEL ${loc} after_cache_check`);
             return undefined;
         }
 
         // Step 5: Collect diagnostics
         const t3 = Date.now();
         const diagnostics = this._collectDiagnostics(document, position);
-        this._log.debug(`[GHOST] ${loc} diagnostics=${diagnostics.length} recentEdits=${this._recentEdits.recentEdits.length} [${Date.now() - t3}ms]`);
+        this._log.debug(`[GHOST] ${srcLoc()} |  ${loc} diagnostics=${diagnostics.length} recentEdits=${this._recentEdits.recentEdits.length} [${Date.now() - t3}ms]`);
 
         // Step 6: Build prompt
         const t4 = Date.now();
@@ -106,10 +107,10 @@ export class GhostTextComputer {
             diagnostics,
             recentEdits: this._recentEdits.recentEdits,
         });
-        this._log.debug(`[GHOST] ${loc} prompt=${prompt.length}ch model=${this._config.model} [${Date.now() - t4}ms]`);
+        this._log.debug(`[GHOST] ${srcLoc()} |  ${loc} prompt=${prompt.length}ch model=${this._config.model} [${Date.now() - t4}ms]`);
 
         if (token?.isCancellationRequested) {
-            this._log.info(`[GHOST] CANCEL ${loc} after_prompt_build`);
+            this._log.info(`[GHOST] ${srcLoc()} |  CANCEL ${loc} after_prompt_build`);
             return undefined;
         }
 
@@ -117,7 +118,7 @@ export class GhostTextComputer {
         const isSingleLine = suffix.startsWith('\n') || suffix.startsWith('\r\n') || suffix.trim() === '';
         const maxTokens = this._config.maxOutputTokens;
         const effectiveTokens = Math.min(isSingleLine ? 64 : maxTokens, maxTokens);
-        this._log.debug(`[GHOST] ${loc} strategy singleLine=${isSingleLine} tokens=${effectiveTokens}/${maxTokens}`);
+        this._log.debug(`[GHOST] ${srcLoc()} |  ${loc} strategy singleLine=${isSingleLine} tokens=${effectiveTokens}/${maxTokens}`);
 
         // Step 8: Network request with AbortController
         const t5 = Date.now();
@@ -125,7 +126,7 @@ export class GhostTextComputer {
 
         // Wire cancellation token to abort controller
         const cancelListener = token?.onCancellationRequested(() => {
-            this._log.info(`[GHOST] ABORT ${loc} — VS Code CancellationToken triggered`);
+            this._log.info(`[GHOST] ${srcLoc()} |  ABORT ${loc} — VS Code CancellationToken triggered`);
             abortController.abort();
         });
 
@@ -141,8 +142,8 @@ export class GhostTextComputer {
                 abortController.signal,
             );
             const networkMs = Date.now() - t5;
-            this._log.info(`[GHOST] ${loc} NETWORK finish=${response.finishReason} text=${response.text.length}ch usage=${JSON.stringify(response.usage)} [${networkMs}ms]`);
-            this._log.debug(`[GHOST] ${loc} raw_response="${this._trunc(response.text, 120)}"`);
+            this._log.info(`[GHOST] ${srcLoc()} |  ${loc} NETWORK finish=${response.finishReason} text=${response.text.length}ch usage=${JSON.stringify(response.usage)} [${networkMs}ms]`);
+            this._log.debug(`[GHOST] ${srcLoc()} |  ${loc} raw_response="${this._trunc(response.text, 120)}"`);
 
             // Step 9: Block trim
             const rawText = response.text;
@@ -150,13 +151,13 @@ export class GhostTextComputer {
                 ? new TerseBlockTrimmer().trim(rawText)
                 : new VerboseBlockTrimmer().trim(rawText);
             if (blockTrimmedText !== rawText) {
-                this._log.debug(`[GHOST] ${loc} block_trim ${rawText.length}→${blockTrimmedText.length}ch singleLine=${isSingleLine}`);
+                this._log.debug(`[GHOST] ${srcLoc()} |  ${loc} block_trim ${rawText.length}→${blockTrimmedText.length}ch singleLine=${isSingleLine}`);
             }
 
             // Step 10: Character-level suffix overlap
             const charTrimmedText = this._trimCharOverlap(blockTrimmedText, suffix);
             if (charTrimmedText !== blockTrimmedText) {
-                this._log.info(`[GHOST] ${loc} char_trim removed="${this._trunc(blockTrimmedText.slice(charTrimmedText.length), 40)}"`);
+                this._log.info(`[GHOST] ${srcLoc()} |  ${loc} char_trim removed="${this._trunc(blockTrimmedText.slice(charTrimmedText.length), 40)}"`);
             }
 
             // Step 11: Line-level suffix overlap
@@ -171,7 +172,7 @@ export class GhostTextComputer {
                 ? completionLines.slice(0, completionLines.length - lineOverlapCount)
                 : completionLines;
             if (lineOverlapCount > 0) {
-                this._log.info(`[GHOST] ${loc} line_trim overlap=${lineOverlapCount} lines`);
+                this._log.info(`[GHOST] ${srcLoc()} |  ${loc} line_trim overlap=${lineOverlapCount} lines`);
             }
             const trimmedText = trimmedLines.join('\n');
 
@@ -187,7 +188,7 @@ export class GhostTextComputer {
             // Step 13: Calculated suffix coverage
             const suffixCoverage = this._calcSuffixCoverage(processed.text, suffix);
 
-            this._log.info(`[GHOST] ${loc} RESULT resultType=Network final=${processed.text.length}ch result="${this._trunc(processed.text, 100)}" total=${Date.now() - t0}ms`);
+            this._log.info(`[GHOST] ${srcLoc()} |  ${loc} RESULT resultType=Network final=${processed.text.length}ch result="${this._trunc(processed.text, 100)}" total=${Date.now() - t0}ms`);
 
             // Step 14: Cache & return
             const choices: CompletionChoice[] = [{
@@ -203,10 +204,10 @@ export class GhostTextComputer {
             };
         } catch (err) {
             if (err instanceof DOMException && err.name === 'AbortError') {
-                this._log.info(`[GHOST] ${loc} ABORTED after ${Date.now() - t0}ms`);
+                this._log.info(`[GHOST] ${srcLoc()} |  ${loc} ABORTED after ${Date.now() - t0}ms`);
                 return undefined;
             }
-            this._log.error(`[GHOST] ${loc} ERROR after ${Date.now() - t0}ms: ${err}`);
+            this._log.error(`[GHOST] ${srcLoc()} |  ${loc} ERROR after ${Date.now() - t0}ms: ${err}`);
             return undefined;
         } finally {
             cancelListener?.dispose();

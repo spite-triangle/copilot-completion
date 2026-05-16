@@ -3,6 +3,7 @@ import { IInstantiationService } from '../../di/instantiation';
 import { INesConfigProvider } from '../../config/nesConfig';
 import { ILLMAdapterManager } from '../shared/llm/llmAdapter';
 import { ILogService } from '../shared/log/logService';
+import { srcLoc } from '../shared/log/srcLoc';
 import { PromptingStrategy, NextEditResult, PromptPieces, LineRange0Based } from './types';
 import { pickSystemPrompt } from './systemMessages';
 import { handleEditWindowOnly } from './responseFormatHandlers';
@@ -25,16 +26,16 @@ export class NesProvider {
     ): Promise<NextEditResult | undefined> {
         const t0 = Date.now();
         const loc = `${document.uri.fsPath}:${position.line + 1}:${position.character + 1}`;
-        this._log.info(`[NES]  ===== START ${loc} =====`);
+        this._log.info(`[NES]  ${srcLoc()} |   ===== START ${loc} =====`);
 
         if (token?.isCancellationRequested) {
-            this._log.info(`[NES]  CANCEL ${loc} before_start`);
+            this._log.info(`[NES]  ${srcLoc()} |   CANCEL ${loc} before_start`);
             return undefined;
         }
 
         // Step 1: Config check
         if (!this._config.enabled) {
-            this._log.info(`[NES]  SKIP ${loc} — disabled by config`);
+            this._log.info(`[NES]  ${srcLoc()} |   SKIP ${loc} — disabled by config`);
             return undefined;
         }
 
@@ -43,32 +44,32 @@ export class NesProvider {
         const docText = document.getText();
         const cached = this._cache.lookupNextEdit(document.uri.toString(), document);
         if (cached) {
-            this._log.info(`[NES]  CACHE_HIT ${loc} edit=${cached.edit.length}ch age=${Date.now() - cached.cacheTime}ms total=${Date.now() - t0}ms`);
-            this._log.debug(`[NES]  ${loc} cached_edit="${this._trunc(cached.edit, 100)}"`);
+            this._log.info(`[NES]  ${srcLoc()} |   CACHE_HIT ${loc} edit=${cached.edit.length}ch age=${Date.now() - cached.cacheTime}ms total=${Date.now() - t0}ms`);
+            this._log.debug(`[NES]  ${srcLoc()} |   ${loc} cached_edit="${this._trunc(cached.edit, 100)}"`);
 
             if (token?.isCancellationRequested) {
-                this._log.info(`[NES]  CANCEL ${loc} after_cache_hit`);
+                this._log.info(`[NES]  ${srcLoc()} |   CANCEL ${loc} after_cache_hit`);
                 return undefined;
             }
             return this._buildResult(cached.edit, document, position);
         }
-        this._log.debug(`[NES]  ${loc} cache_miss [${Date.now() - t1}ms]`);
+        this._log.debug(`[NES]  ${srcLoc()} |   ${loc} cache_miss [${Date.now() - t1}ms]`);
 
         if (token?.isCancellationRequested) {
-            this._log.info(`[NES]  CANCEL ${loc} after_cache_miss`);
+            this._log.info(`[NES]  ${srcLoc()} |   CANCEL ${loc} after_cache_miss`);
             return undefined;
         }
 
         // Step 3: Build prompt pieces
         const t2 = Date.now();
         const promptPieces = this._buildPromptPieces(document, position);
-        this._log.debug(`[NES]  ${loc} edit_window L${promptPieces.editWindowRange.startLine + 1}-L${promptPieces.editWindowRange.endLineExclusive} area_around L${promptPieces.areaAroundRange.startLine + 1}-L${promptPieces.areaAroundRange.endLineExclusive} lang=${promptPieces.languageContext} [${Date.now() - t2}ms]`);
+        this._log.debug(`[NES]  ${srcLoc()} |   ${loc} edit_window L${promptPieces.editWindowRange.startLine + 1}-L${promptPieces.editWindowRange.endLineExclusive} area_around L${promptPieces.areaAroundRange.startLine + 1}-L${promptPieces.areaAroundRange.endLineExclusive} lang=${promptPieces.languageContext} [${Date.now() - t2}ms]`);
 
         // Step 4: Build prompts
         const t3 = Date.now();
         const userPrompt = this._buildUserPrompt(promptPieces);
         const systemPrompt = pickSystemPrompt(PromptingStrategy.Xtab275);
-        this._log.debug(`[NES]  ${loc} system_prompt=${systemPrompt.length}ch user_prompt=${userPrompt.length}ch [${Date.now() - t3}ms]`);
+        this._log.debug(`[NES]  ${srcLoc()} |   ${loc} system_prompt=${systemPrompt.length}ch user_prompt=${userPrompt.length}ch [${Date.now() - t3}ms]`);
 
         // Step 5: Network request with AbortController
         const t4 = Date.now();
@@ -76,11 +77,11 @@ export class NesProvider {
         const adapter = this._llmManager.getAdapter(endpoint);
         const abortController = new AbortController();
         const cancelListener = token?.onCancellationRequested(() => {
-            this._log.info(`[NES]  ABORT ${loc} — CancellationToken triggered`);
+            this._log.info(`[NES]  ${srcLoc()} |   ABORT ${loc} — CancellationToken triggered`);
             abortController.abort();
         });
 
-        this._log.debug(`[NES]  ${loc} endpoint=${endpoint} model=${this._config.model} max_tokens=${this._config.maxOutputTokens}`);
+        this._log.debug(`[NES]  ${srcLoc()} |   ${loc} endpoint=${endpoint} model=${this._config.model} max_tokens=${this._config.maxOutputTokens}`);
 
         try {
             const response = await adapter.send(
@@ -98,22 +99,22 @@ export class NesProvider {
                 abortController.signal,
             );
             const networkMs = Date.now() - t4;
-            this._log.info(`[NES]  ${loc} NETWORK finish=${response.finishReason} text=${response.text.length}ch usage=${JSON.stringify(response.usage)} [${networkMs}ms]`);
-            this._log.debug(`[NES]  ${loc} raw_response="${this._trunc(response.text, 200)}"`);
+            this._log.info(`[NES]  ${srcLoc()} |   ${loc} NETWORK finish=${response.finishReason} text=${response.text.length}ch usage=${JSON.stringify(response.usage)} [${networkMs}ms]`);
+            this._log.debug(`[NES]  ${srcLoc()} |   ${loc} raw_response="${this._trunc(response.text, 200)}"`);
 
             // Step 6: Parse response
             const parsed = handleEditWindowOnly(response.text);
             const editText = parsed.lines.join('\n');
-            this._log.debug(`[NES]  ${loc} parsed lines=${parsed.lines.length} edit=${editText.length}ch`);
+            this._log.debug(`[NES]  ${srcLoc()} |   ${loc} parsed lines=${parsed.lines.length} edit=${editText.length}ch`);
 
             if (!editText.trim()) {
-                this._log.info(`[NES]  ${loc} EMPTY_EDIT — model returned no content total=${Date.now() - t0}ms`);
+                this._log.info(`[NES]  ${srcLoc()} |   ${loc} EMPTY_EDIT — model returned no content total=${Date.now() - t0}ms`);
                 return undefined;
             }
 
             // Step 7: Diff model output against edit window lines (to extract actual edits)
             const editWindowLines = this._getEditWindowLines(document, position);
-            this._log.debug(`[NES]  ${loc} edit_window_lines=${editWindowLines.length}`);
+            this._log.debug(`[NES]  ${srcLoc()} |   ${loc} edit_window_lines=${editWindowLines.length}`);
 
             // Step 8: Apply suffix overlap trimming (line-level)
             const trimmer = new TrimNESResponseSuffixOverlap(
@@ -128,13 +129,13 @@ export class NesProvider {
                 ? parsed.lines.slice(0, parsed.lines.length - overlapCount)
                 : parsed.lines;
             if (overlapCount > 0) {
-                this._log.info(`[NES]  ${loc} suffix_trim overlap=${overlapCount} lines threshold=${this._config.suffixOverlapThreshold} type=${this._config.suffixOverlapType}`);
+                this._log.info(`[NES]  ${srcLoc()} |   ${loc} suffix_trim overlap=${overlapCount} lines threshold=${this._config.suffixOverlapThreshold} type=${this._config.suffixOverlapType}`);
             }
             const finalEdit = finalLines.join('\n');
 
             // Step 9: Filter edit (reject empty/noop/comment-only/whitespace-only edits)
             if (this._shouldRejectEdit(finalEdit, editWindowLines)) {
-                this._log.info(`[NES]  ${loc} FILTERED — edit rejected by filter total=${Date.now() - t0}ms`);
+                this._log.info(`[NES]  ${srcLoc()} |   ${loc} FILTERED — edit rejected by filter total=${Date.now() - t0}ms`);
                 return undefined;
             }
 
@@ -151,15 +152,15 @@ export class NesProvider {
             });
 
             const totalMs = Date.now() - t0;
-            this._log.info(`[NES]  ${loc} RESULT edit=${finalEdit.length}ch preview="${this._trunc(finalEdit, 100)}" total=${totalMs}ms`);
+            this._log.info(`[NES]  ${srcLoc()} |   ${loc} RESULT edit=${finalEdit.length}ch preview="${this._trunc(finalEdit, 100)}" total=${totalMs}ms`);
 
             return this._buildResult(finalEdit, document, position);
         } catch (err) {
             if (err instanceof DOMException && err.name === 'AbortError') {
-                this._log.info(`[NES]  ${loc} ABORTED after ${Date.now() - t0}ms`);
+                this._log.info(`[NES]  ${srcLoc()} |   ${loc} ABORTED after ${Date.now() - t0}ms`);
                 return undefined;
             }
-            this._log.error(`[NES]  ${loc} ERROR after ${Date.now() - t0}ms: ${err}`);
+            this._log.error(`[NES]  ${srcLoc()} |   ${loc} ERROR after ${Date.now() - t0}ms: ${err}`);
             return undefined;
         } finally {
             cancelListener?.dispose();
