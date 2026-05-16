@@ -1,0 +1,154 @@
+{
+  "name": "cc-completion",
+  "displayName": "CC Completion",
+  "description": "Code completion powered by LLM — GHOST (FIM) and NES (Next Edit Suggestion)",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.110.0"
+  },
+  "categories": [
+    "Machine Learning",
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "cc-completion.togglePanel",
+        "title": "Toggle CC Completion Panel"
+      }
+    ],
+    "configuration": {
+      "title": "CC Completion",
+      "properties": {
+        "cc-completion.ghost.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable Ghost Inline Completion (FIM)"
+        },
+        "cc-completion.ghost.baseUrl": {
+          "type": "string",
+          "default": "",
+          "description": "GHOST API base URL"
+        },
+        "cc-completion.ghost.apiKey": {
+          "type": "string",
+          "default": "",
+          "description": "GHOST API key"
+        },
+        "cc-completion.ghost.model": {
+          "type": "string",
+          "default": "gpt-4o",
+          "description": "GHOST model name"
+        },
+        "cc-completion.ghost.promptTemplate": {
+          "type": "string",
+          "default": "<|fim_prefix|>{prefix}<|fim_suffix|>{suffix}<|fim_middle|>",
+          "description": "FIM prompt template. Use {prefix} and {suffix} placeholders."
+        },
+        "cc-completion.ghost.capabilities.limits.max_output_tokens": {
+          "type": "number",
+          "default": 256,
+          "description": "Max output tokens for GHOST (hard cap)"
+        },
+        "cc-completion.ghost.capabilities.limits.max_context_window_tokens": {
+          "type": "number",
+          "default": 128000,
+          "description": "Max context window tokens"
+        },
+        "cc-completion.nes.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable Next Edit Suggestion (NES)"
+        },
+        "cc-completion.nes.baseUrl": {
+          "type": "string",
+          "default": "",
+          "description": "NES API base URL"
+        },
+        "cc-completion.nes.apiKey": {
+          "type": "string",
+          "default": "",
+          "description": "NES API key"
+        },
+        "cc-completion.nes.model": {
+          "type": "string",
+          "default": "gpt-4o",
+          "description": "NES model name"
+        },
+        "cc-completion.nes.supportedEndpoint": {
+          "type": "string",
+          "enum": [
+            "/chat/completions",
+            "/responses",
+            "/v1/messages"
+          ],
+          "default": "/chat/completions",
+          "description": "LLM API endpoint for NES"
+        },
+        "cc-completion.nes.capabilities.limits.max_output_tokens": {
+          "type": "number",
+          "default": 4096,
+          "description": "Max output tokens for NES (hard cap)"
+        },
+        "cc-completion.nes.capabilities.limits.max_context_window_tokens": {
+          "type": "number",
+          "default": 128000,
+          "description": "Max context window tokens"
+        },
+        "cc-completion.nes.capabilities.supports.thinking": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether the model supports thinking"
+        },
+        "cc-completion.nes.capabilities.supports.reasoning_effort": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["minimal", "low", "medium", "high", "xhigh"]
+          },
+          "default": [],
+          "description": "Supported reasoning effort levels"
+        },
+        "cc-completion.nes.suffixOverlapThreshold": {
+          "type": "number",
+          "default": 0.5,
+          "description": "Suffix overlap similarity threshold for NES response trimming"
+        },
+        "cc-completion.nes.suffixOverlapType": {
+          "type": "string",
+          "enum": ["low", "high"],
+          "default": "low",
+          "description": "Suffix overlap detection type"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run package",
+    "compile": "webpack",
+    "watch": "webpack --watch",
+    "package": "webpack --mode production --devtool hidden-source-map",
+    "compile-tests": "tsc -p . --outDir out",
+    "watch-tests": "tsc -p . -w --outDir out",
+    "pretest": "npm run compile-tests && npm run compile && npm run lint",
+    "lint": "eslint src",
+    "test": "vscode-test"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.110.0",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "22.x",
+    "typescript-eslint": "^8.56.1",
+    "eslint": "^9.39.3",
+    "typescript": "^5.9.3",
+    "ts-loader": "^9.5.4",
+    "webpack": "^5.105.3",
+    "webpack-cli": "^6.0.1",
+    "@vscode/test-cli": "^0.0.12",
+    "@vscode/test-electron": "^2.5.2"
+  }
+}
