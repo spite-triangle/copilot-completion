@@ -468,6 +468,21 @@ NextEditProvider (有状态编排器)
 - **测试镜像**: test 目录结构与 src 一一对应
 
 ---
+## 变更记录 (vs 原始 plan)
+
+| 日期 | 变更 | 说明 |
+|------|------|------|
+| 2026-05-16 | WebView → QuickPick | 控制面板改用 `showQuickPick`，避免 WebView CSP/ServiceWorker 问题 |
+| 2026-05-16 | GHOST 后缀重叠裁剪 | 移植 `_trimCharOverlap` (字符级首行比较) + `TrimNESResponseSuffixOverlap` (行级 Levenshtein) |
+| 2026-05-16 | GHOST `isInlineSuggestion` | 从源项目移植 3 态逻辑 (`inlineSuggestion.ts`) — `false`=行尾/`true`=行中闭合/`undefined`=中止 |
+| 2026-05-16 | CancellationToken 机制 | GHOST+NES 全链路 `CancellationToken` → `AbortController` → `fetch(signal)`，防止请求堆积 |
+| 2026-05-16 | LLM Adapter `AbortSignal` | `ILLMAdapter.send(request, signal?)` 支持可选 AbortSignal |
+| 2026-05-16 | GHOST 缺失步骤补齐 | `postProcessChoiceInContext` (缩进规范) / `adjustLeadingWhitespace` (displayText 分离) / `_calcSuffixCoverage` |
+| 2026-05-16 | NES 缺失步骤补齐 | `_shouldRejectEdit` (空/noop/空白/注释编辑过滤) / `_getEditWindowLines` |
+| 2026-05-16 | 源码行号日志 | `srcLoc()` 工具函数 — 从 `Error().stack` 提取调用者 `文件名:行号`，格式 `ghostTextComputer.ts:47` |
+| 2026-05-16 | GHOST suffixOverlap 配置 | 新增 `cc-completion.ghost.suffixOverlapThreshold` (0.6) / `suffixOverlapType` ("low") |
+
+---
 
 ### 日志
 
