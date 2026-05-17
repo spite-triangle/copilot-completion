@@ -20,6 +20,9 @@ import { IGhostCompletionsCache, GhostCompletionsCache } from './completions/gho
 import { IRecentEditsProvider, RecentEditsProvider } from './completions/ghost/recentEditsProvider';
 import { IGhostTextProvider, GhostTextProvider } from './completions/ghost/ghostTextProvider';
 import { IAsyncCompletionsManager, AsyncCompletionsManager } from './completions/ghost/asyncCompletions';
+import { IMultilineStrategy } from './completions/ghost/multiline/types';
+import { DefaultMultilineStrategy } from './completions/ghost/multiline/DefaultMultilineStrategy';
+import { setWasmDirPath } from './completions/ghost/multiline/treeSitter/fileLoader';
 
 // NES
 import { INesProvider, NextEditProvider } from './completions/nes/nextEditProvider';
@@ -31,6 +34,9 @@ import { IStatusBarPanel, StatusBarPanel } from './ui/statusBarPanel';
 export function activate(context: vscode.ExtensionContext) {
     const logService = new LogService();
     logService.info('CC Completion activating...');
+
+    // Initialize WASM path for tree-sitter
+    setWasmDirPath(context.extensionUri.fsPath);
 
     // Build DI container
     const builder = new InstantiationServiceBuilder();
@@ -51,6 +57,7 @@ export function activate(context: vscode.ExtensionContext) {
     builder.define(IRecentEditsProvider, new SyncDescriptor(RecentEditsProvider));
     builder.define(IAsyncCompletionsManager, new SyncDescriptor(AsyncCompletionsManager));
     builder.define(IGhostTextProvider, new SyncDescriptor(GhostTextProvider));
+    builder.define(IMultilineStrategy, new SyncDescriptor(DefaultMultilineStrategy));
 
     // === NES services ===
     builder.define(INextEditCache, new SyncDescriptor(NextEditCache));
@@ -109,6 +116,9 @@ function registerLLMAdapters(
         ghostConfig.apiKey,
         ghostConfig.model,
         log,
+        ghostConfig.presencePenalty,
+        ghostConfig.frequencyPenalty,
+        ghostConfig.stream,
     ));
     log.debug('Registered GHOST adapter: completions');
 
@@ -118,13 +128,26 @@ function registerLLMAdapters(
 
     switch (endpoint) {
         case 'chat/completions':
-            llmManager.register('chat/completions', new OpenAIChatAdapter(baseUrl, apiKey, model));
+            llmManager.register('chat/completions', new OpenAIChatAdapter(
+                baseUrl, apiKey, model,
+                nesConfig.presencePenalty,
+                nesConfig.frequencyPenalty,
+                nesConfig.stream,
+            ));
             break;
         case 'responses':
-            llmManager.register('responses', new OpenAIResponseAdapter(baseUrl, apiKey, model));
+            llmManager.register('responses', new OpenAIResponseAdapter(
+                baseUrl, apiKey, model,
+                nesConfig.presencePenalty,
+                nesConfig.frequencyPenalty,
+                nesConfig.stream,
+            ));
             break;
         case 'messages':
-            llmManager.register('messages', new AnthropicAdapter(baseUrl, apiKey, model));
+            llmManager.register('messages', new AnthropicAdapter(
+                baseUrl, apiKey, model,
+                nesConfig.stream,
+            ));
             break;
     }
     log.debug(`Registered NES adapter: ${endpoint}`);

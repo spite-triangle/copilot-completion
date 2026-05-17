@@ -541,7 +541,8 @@ NextEditProvider (有状态编排器)
 | 2026-05-16 | 取消机制精简 | 移除 Provider 层 AbortController 管理，纯 `CancellationToken` 透传。流式路径每轮 `signal?.aborted` 检查，非流式用 `fetch(signal)` |
 | 2026-05-16 | 日志清理 | 移除 `srcLoc()` 调用和文档 `loc` 变量，日志格式 `[模块] 消息`。`LLMError.toString()` 输出 statusCode + responseBody |
 | 2026-05-16 | `LLMError.toString()` | 重写 `toString()` 输出 `name + message + status + body`，方便 `${err}` 模板字符串调试 |
-| 2026-05-17 | `\r\n` → `\n` 统一 | GHOST prefix/suffix/prompt、NES document text/suffix overlap 所有位置做 `.replace(/\r\n/g, '\n')`，消除 Windows CRLF 对 LLM prompt 的影响 |
+| 2026-05-17 | `\r\n` → `\n` 统一 | 仅对组装后的 prompt 做 `.replace(/\r\n/g, '\n')`（`ghostTextComputer.ts` line 123）。prefix 保留原始编码，suffix 用 `substring(offset)` 后 `.replace(/\r/g, '')` 避免 offset 漂移。LLM 适配器 `normalizeBody()` 兜底。消除 Windows CRLF 对 prompt 的影响，同时保证中间流程的文档索引正确 |
+| 2026-05-17 | GHOST suffix offset 修复 | suffix 提取从 `position.line + 1` 改为 `offsetAt(position)` + `substring(offset)` + `strip \r` + `replace(/^.*?\n/, '')`，修复 `\r\n` 预归一化导致 offset 漂移截断 suffix 的问题 |
 | 2026-05-17 | LLM 适配器 `normalizeBody()` | `llmRequest.ts` 新增 `normalizeBody()`，4 个适配器 (`openaiChat/openaiCompletion/anthropic/openaiResponse`) 在 `fetch` 前统一调用，兜底替换 `\r\n` → `\n` |
 | 2026-05-17 | GHOST 缩进重叠裁剪 | `ghostTextProvider.ts` 新增 `trimIndentOverlap()`，光标在纯空白行时裁剪补全开头与当前行空白重叠的部分，仅当裁剪后以非空白字符开头才生效（防止 `    |` + `    }` → `        }` 导致补全无法确认） |
 

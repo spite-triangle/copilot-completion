@@ -10,6 +10,9 @@ export const ConfigKeys = {
         delay: 'cc-completion.ghost.capabilities.limits.delay',
         suffixOverlapThreshold: 'cc-completion.ghost.suffixOverlapThreshold',
         suffixOverlapType: 'cc-completion.ghost.suffixOverlapType',
+        presencePenalty: 'cc-completion.ghost.presencePenalty',
+        frequencyPenalty: 'cc-completion.ghost.frequencyPenalty',
+        stream: 'cc-completion.ghost.stream',
     },
     Nes: {
         enabled: 'cc-completion.nes.enabled',
@@ -23,5 +26,8 @@ export const ConfigKeys = {
         reasoningEffort: 'cc-completion.nes.capabilities.supports.reasoning_effort',
         suffixOverlapThreshold: 'cc-completion.nes.suffixOverlapThreshold',
         suffixOverlapType: 'cc-completion.nes.suffixOverlapType',
+        presencePenalty: 'cc-completion.nes.presencePenalty',
+        frequencyPenalty: 'cc-completion.nes.frequencyPenalty',
+        stream: 'cc-completion.nes.stream',
     }
 } as const;

@@ -78,6 +78,25 @@
           "default": "low",
           "description": "Suffix overlap detection type for GHOST"
         },
+        "cc-completion.ghost.presencePenalty": {
+          "type": "number",
+          "default": 1,
+          "minimum": -2,
+          "maximum": 2,
+          "description": "Presence penalty for GHOST completions (-2.0 to 2.0). Positive values penalize new tokens based on whether they appear in the text so far, increasing the model's likelihood to talk about new topics."
+        },
+        "cc-completion.ghost.frequencyPenalty": {
+          "type": "number",
+          "default": 0.2,
+          "minimum": -2,
+          "maximum": 2,
+          "description": "Frequency penalty for GHOST completions (-2.0 to 2.0). Positive values penalize new tokens based on their existing frequency in the text so far, decreasing the model's likelihood to repeat the same line verbatim."
+        },
+        "cc-completion.ghost.stream": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable SSE streaming for GHOST completions"
+        },
         "cc-completion.nes.enabled": {
           "type": "boolean",
           "default": true,
@@ -151,6 +170,25 @@
           ],
           "default": "low",
           "description": "Suffix overlap detection type"
+        },
+        "cc-completion.nes.presencePenalty": {
+          "type": "number",
+          "default": 1,
+          "minimum": -2,
+          "maximum": 2,
+          "description": "Presence penalty for NES (-2.0 to 2.0). Positive values penalize new tokens based on whether they appear in the text so far."
+        },
+        "cc-completion.nes.frequencyPenalty": {
+          "type": "number",
+          "default": 0.2,
+          "minimum": -2,
+          "maximum": 2,
+          "description": "Frequency penalty for NES (-2.0 to 2.0). Positive values penalize new tokens based on their existing frequency."
+        },
+        "cc-completion.nes.stream": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable SSE streaming for NES"
         }
       }
     }
@@ -172,11 +210,15 @@
     "@types/vscode": "^1.110.0",
     "@vscode/test-cli": "^0.0.12",
     "@vscode/test-electron": "^2.5.2",
+    "copy-webpack-plugin": "^14.0.0",
     "eslint": "^9.39.3",
     "ts-loader": "^9.5.4",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.56.1",
     "webpack": "^5.105.3",
     "webpack-cli": "^6.0.1"
+  },
+  "dependencies": {
+    "web-tree-sitter": "^0.23.2"
   }
 }

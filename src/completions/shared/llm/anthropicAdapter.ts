@@ -7,6 +7,7 @@ export class AnthropicAdapter implements ILLMAdapter {
         private readonly baseUrl: string,
         private readonly apiKey: string,
         private readonly model: string,
+        private readonly _defaultStream: boolean = true,
     ) {}
 
     async send(request: LLMRequest, signal?: AbortSignal): Promise<LLMResponse> {
@@ -23,7 +24,7 @@ export class AnthropicAdapter implements ILLMAdapter {
             messages: userMessages,
             max_tokens: request.max_tokens,
             temperature: request.temperature,
-            stream: true,
+            stream: request.stream ?? this._defaultStream,
         };
         if (system) bodyObj.system = system;
         if (request.stop) bodyObj.stop_sequences = request.stop;

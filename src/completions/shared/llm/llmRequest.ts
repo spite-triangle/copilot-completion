@@ -22,6 +22,9 @@ export interface LLMRequest {
     top_p?: number;
     stop?: string[];
     capabilities?: Capabilities;
+    presence_penalty?: number;
+    frequency_penalty?: number;
+    stream?: boolean;
 }
 
 export interface TokenUsage {

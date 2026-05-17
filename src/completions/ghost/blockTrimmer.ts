@@ -4,6 +4,10 @@ export interface BlockTrimmerConfig {
 }
 
 export class BlockTrimmer {
+    static isSupported(_languageId: string): boolean {
+        return false; // tree-sitter WASM not yet integrated
+    }
+
     constructor(private readonly config: BlockTrimmerConfig) {}
 
     trim(text: string): string {
@@ -31,4 +35,19 @@ export class VerboseBlockTrimmer extends BlockTrimmer {
     constructor() {
         super({ maxLines: 40, stopAtBlankLine: false });
     }
+}
+
+export enum BlockPositionType {
+    NonBlock = 'non-block',
+    EmptyBlock = 'empty-block',
+    BlockEnd = 'block-end',
+    MidBlock = 'mid-block',
+}
+
+/** Returns the block position type for a cursor position. Requires tree-sitter WASM for full support. */
+export function getBlockPositionType(
+    _document: { detectedLanguageId?: string },
+    _position: { line: number },
+): BlockPositionType {
+    return BlockPositionType.NonBlock;
 }

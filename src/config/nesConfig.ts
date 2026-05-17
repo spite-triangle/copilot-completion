@@ -28,6 +28,9 @@ export interface INesConfigProvider {
     get maxOutputTokens(): number;
     get suffixOverlapThreshold(): number;
     get suffixOverlapType(): 'low' | 'high';
+    get presencePenalty(): number;
+    get frequencyPenalty(): number;
+    get stream(): boolean;
     onDidChangeEnabled(listener: () => void): vscode.Disposable;
 }
 
@@ -84,6 +87,21 @@ export class VSCodeNesConfigProvider implements INesConfigProvider {
     get suffixOverlapType(): 'low' | 'high' {
         return vscode.workspace.getConfiguration()
             .get<'low' | 'high'>(ConfigKeys.Nes.suffixOverlapType, 'low');
+    }
+
+    get presencePenalty(): number {
+        return vscode.workspace.getConfiguration()
+            .get<number>(ConfigKeys.Nes.presencePenalty, 1);
+    }
+
+    get frequencyPenalty(): number {
+        return vscode.workspace.getConfiguration()
+            .get<number>(ConfigKeys.Nes.frequencyPenalty, 0.2);
+    }
+
+    get stream(): boolean {
+        return vscode.workspace.getConfiguration()
+            .get<boolean>(ConfigKeys.Nes.stream, true);
     }
 
     onDidChangeEnabled(listener: () => void): vscode.Disposable {

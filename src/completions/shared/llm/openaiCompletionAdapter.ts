@@ -9,6 +9,9 @@ export class OpenAICompletionAdapter implements ILLMAdapter {
         private readonly apiKey: string,
         private readonly model: string,
         private readonly logService: ILogService,
+        private readonly _defaultPresencePenalty: number = 1,
+        private readonly _defaultFrequencyPenalty: number = 0.2,
+        private readonly _defaultStream: boolean = true,
     ) {}
 
     async send(request: LLMRequest, signal?: AbortSignal): Promise<LLMResponse> {
@@ -21,8 +24,10 @@ export class OpenAICompletionAdapter implements ILLMAdapter {
             max_tokens: request.max_tokens,
             temperature: request.temperature,
             top_p: request.top_p,
-            n:request.n,
-            stream: true,
+            n: request.n,
+            presence_penalty: request.presence_penalty ?? this._defaultPresencePenalty,
+            frequency_penalty: request.frequency_penalty ?? this._defaultFrequencyPenalty,
+            stream: request.stream ?? this._defaultStream,
             ...(request.stop ? { stop: request.stop } : {}),
         });
 

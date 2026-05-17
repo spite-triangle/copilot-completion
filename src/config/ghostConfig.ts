@@ -23,6 +23,9 @@ export interface IGhostConfigProvider {
     get delay(): number;
     get suffixOverlapThreshold(): number;
     get suffixOverlapType(): 'low' | 'high';
+    get presencePenalty(): number;
+    get frequencyPenalty(): number;
+    get stream(): boolean;
     onDidChangeEnabled(listener: () => void): vscode.Disposable;
 }
 
@@ -80,6 +83,21 @@ export class VSCodeGhostConfigProvider implements IGhostConfigProvider {
     get suffixOverlapType(): 'low' | 'high' {
         return vscode.workspace.getConfiguration()
             .get<'low' | 'high'>(ConfigKeys.Ghost.suffixOverlapType, 'low');
+    }
+
+    get presencePenalty(): number {
+        return vscode.workspace.getConfiguration()
+            .get<number>(ConfigKeys.Ghost.presencePenalty, 1);
+    }
+
+    get frequencyPenalty(): number {
+        return vscode.workspace.getConfiguration()
+            .get<number>(ConfigKeys.Ghost.frequencyPenalty, 0.2);
+    }
+
+    get stream(): boolean {
+        return vscode.workspace.getConfiguration()
+            .get<boolean>(ConfigKeys.Ghost.stream, true);
     }
 
     onDidChangeEnabled(listener: () => void): vscode.Disposable {

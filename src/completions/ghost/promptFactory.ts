@@ -49,8 +49,8 @@ export class GhostPromptFactory implements IGhostPromptFactory {
 
         const context = contextLines.join('\n') + '\n';
         return params.template
-            .replace(/\{prefix\}/g, context + params.prefix)
-            .replace(/\{suffix\}/g, params.suffix);
+            .replace(/\{prefix\}/g, '\n' + context + params.prefix)
+            .replace(/\{suffix\}/g, '\n' + params.suffix + '\n');
     }
 
     private _getCommentPrefix(languageId: string): string {

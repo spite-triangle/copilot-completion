@@ -7,6 +7,9 @@ export class OpenAIResponseAdapter implements ILLMAdapter {
         private readonly baseUrl: string,
         private readonly apiKey: string,
         private readonly model: string,
+        private readonly _defaultPresencePenalty: number = 1,
+        private readonly _defaultFrequencyPenalty: number = 0.2,
+        private readonly _defaultStream: boolean = true,
     ) {}
 
     async send(request: LLMRequest, signal?: AbortSignal): Promise<LLMResponse> {
@@ -17,7 +20,9 @@ export class OpenAIResponseAdapter implements ILLMAdapter {
             input,
             max_output_tokens: request.max_tokens,
             temperature: request.temperature,
-            stream: true,
+            presence_penalty: request.presence_penalty ?? this._defaultPresencePenalty,
+            frequency_penalty: request.frequency_penalty ?? this._defaultFrequencyPenalty,
+            stream: request.stream ?? this._defaultStream,
         });
 
         const response = await fetch(url, {

@@ -14,6 +14,8 @@ import { TrimNESResponseSuffixOverlap } from '../nes/suffixOverlapTrim';
 import { DiagnosticSummary, GhostCompletion } from './types';
 import { ResultType } from './resultType';
 import { isInlineSuggestionFromTextAfterCursor } from './inlineSuggestion';
+import { IMultilineStrategy } from './multiline/types';
+import { MultilineContextBuilder } from './multiline/MultilineContextBuilder';
 
 // Module-level rate limiting (matches original fetch.ts design)
 let lastRequestTime = 0;
@@ -37,6 +39,7 @@ export class GhostTextComputer {
         @ILLMAdapterManager private readonly _llmManager: ILLMAdapterManager,
         @IAsyncCompletionsManager private readonly _asyncManager: IAsyncCompletionsManager,
         @ILogService private readonly _log: ILogService,
+        @IMultilineStrategy private readonly multilineStrategy: IMultilineStrategy,
     ) {}
 
     async getGhostText(
@@ -71,19 +74,13 @@ export class GhostTextComputer {
         const isMiddleOfTheLine = !!inlineSuggestion;
 
         // Step 3: Extract prefix/suffix
-        // suffix 从光标所在行的下一行开始，光标所在行光标后面的文本不进入 suffix
+        // suffix 从光标 offset 开始截取，去除光标所在行残余文本及 \n，保留后续行
         const t1 = Date.now();
-        const prefix = "\n" + document.getText(new vscode.Range(new vscode.Position(0, 0), position))
-            .replace(/\r\n/g, '\n');
-        const suffixStartLine = position.line + 1;
-        const suffix ="\n" + (suffixStartLine < document.lineCount
-            ? document.getText(
-                new vscode.Range(
-                    new vscode.Position(suffixStartLine, 0),
-                    document.lineAt(document.lineCount - 1).range.end,
-                ),
-            ).replace(/\r\n/g, '\n')
-            : '')  + "\n";
+        const prefix = document.getText(new vscode.Range(new vscode.Position(0, 0), position));
+        const offset = document.offsetAt(position);
+        const suffix = document.getText().substring(offset)
+            .replace(/\r/g, '')
+            .replace(/^.*?\n/, '');
         this._log.debug(`[GHOST] prefix=${prefix.length}ch suffix=${suffix.length}ch [${Date.now() - t1}ms]`);
         this._log.debug(`[GHOST] prefix_tail="${this._trunc(prefix, 80)}"`);
         this._log.debug(`[GHOST] suffix_head="${this._trunc(suffix, 80)}"`);
@@ -131,11 +128,21 @@ export class GhostTextComputer {
             return undefined;
         }
 
-        // Step 7: Determine strategy (textAfterCursor from Step 2, already computed above)
-        const isSingleLine = textAfterCursor.trim() === '';
-        const maxTokens = Math.min(this._config.maxOutputTokens, 500);
-        const effectiveTokens = Math.min(isSingleLine ? 20 : maxTokens, maxTokens);
-        this._log.debug(`[GHOST] strategy singleLine=${isSingleLine} tokens=${effectiveTokens}/${maxTokens}`);
+        // Step 7: Determine multiline strategy via detector chain
+        const afterAccept = this._currentGhostText.hasAcceptedCurrentCompletion();
+        const multilineCtx = new MultilineContextBuilder().build({
+            document,
+            position,
+            prefix,
+            suffix,
+            languageId: document.languageId,
+            isMiddleOfTheLine,
+            afterAccept,
+        });
+        const requestMultiline = await this.multilineStrategy.determineMultiline(multilineCtx);
+        const maxTokens = Math.min(this._config.maxOutputTokens, 512);
+        const effectiveTokens = Math.min(requestMultiline ? maxTokens : 64, maxTokens);
+        this._log.debug(`[GHOST] strategy multiline=${requestMultiline} tokens=${effectiveTokens}/${maxTokens}`);
 
         // Step 8: Network request with rate limiting + AbortController
         const t5 = Date.now();
@@ -175,7 +182,7 @@ export class GhostTextComputer {
                     prompt,
                     max_tokens: effectiveTokens,
                     temperature: 0,
-                    stop: isSingleLine ? ['\n'] : ['\n\n',"\n```"],
+                    stop: requestMultiline ? ['\n\n',"\n```"] : ['\n'],
                     top_p:1,
                     n:1
                 },
@@ -188,11 +195,11 @@ export class GhostTextComputer {
 
             // Step 9: Block trim
             const rawText = response.text;
-            const blockTrimmedText = isSingleLine
-                ? new TerseBlockTrimmer().trim(rawText)
-                : new VerboseBlockTrimmer().trim(rawText);
+            const blockTrimmedText = requestMultiline
+                ? new VerboseBlockTrimmer().trim(rawText)
+                : new TerseBlockTrimmer().trim(rawText);
             if (blockTrimmedText !== rawText) {
-                this._log.debug(`[GHOST] block_trim ${rawText.length}→${blockTrimmedText.length}ch singleLine=${isSingleLine}`);
+                this._log.debug(`[GHOST] block_trim ${rawText.length}→${blockTrimmedText.length}ch multiline=${requestMultiline}`);
             }
 
             // Step 10: Character-level suffix overlap
@@ -217,11 +224,9 @@ export class GhostTextComputer {
             }
             const trimmedText = trimmedLines.join('\n');
 
-            const postTrimText = trimmedText.length > 0 ? trimmedText : charTrimmedText;
-
             // Step 12: Post-process (adjustLeadingWhitespace, displayText separation)
             const processed = this._postProcessChoiceInContext(
-                { text: postTrimText, finishReason: response.finishReason },
+                { text: trimmedText, finishReason: response.finishReason },
                 document,
                 position,
             );
