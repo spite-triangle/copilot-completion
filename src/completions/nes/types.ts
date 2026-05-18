@@ -21,7 +21,7 @@ export interface NextEditResult {
     /** Reference to cache entry, for wasRenderedAsInlineSuggestion write-back */
     cacheEntry?: import('./nextEditCache').CachedEdit;
     /** Whether this result came from a cursor jump request */
-    isFromCursorJump: boolean;
+    isFromCursorJump?: boolean;
     /** If set, this is a cursor-jump-only suggestion with no text edit */
     jumpToPosition?: vscode.Position;
     /** Cursor prediction metadata (for predict-retry flow) */
