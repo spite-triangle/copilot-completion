@@ -1,3 +1,4 @@
+import { ILogService } from '../log/logService';
 import { ILLMAdapter } from './llmAdapter';
 import { LLMRequest, LLMResponse, LLMError, normalizeBody } from './llmRequest';
 import { readSSEStream } from './sseStream';

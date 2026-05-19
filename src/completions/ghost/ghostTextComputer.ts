@@ -121,7 +121,7 @@ export class GhostTextComputer {
         });
         prompt = prompt.replace(/\r\n/g, '\n');
         this._log.debug(`[GHOST] prompt=${prompt.length}ch model=${this._config.model} [${Date.now() - t4}ms]`);
-        this._log.debug(`prompt\n ${prompt}`);
+        this._log.debug('\n' + prompt);
 
         if (token?.isCancellationRequested) {
             this._log.info(`[GHOST] CANCEL after_prompt_build`);
@@ -190,8 +190,7 @@ export class GhostTextComputer {
             );
             const networkMs = (Date.now() - t5);
             this._log.info(`[GHOST] NETWORK finish=${response.finishReason} text=${response.text.length}ch usage=${JSON.stringify(response.usage)} [${networkMs}ms]`);
-            this._log.debug(`[GHOST] raw_response="${this._trunc(response.text, 120)}"`);
-            this._log.debug(`result\n ${response.text}`);
+            this._log.debug('\n'+response.text);
 
             // Step 9: Block trim
             const rawText = response.text;
@@ -234,7 +233,8 @@ export class GhostTextComputer {
             // Step 13: Calculated suffix coverage
             const suffixCoverage = this._calcSuffixCoverage(processed.text, suffix);
 
-            this._log.info(`[GHOST] RESULT resultType=Network final=${processed.text.length}ch result="${this._trunc(processed.text, 100)}" total=${Date.now() - t0}ms`);
+            this._log.info(`[GHOST] RESULT resultType=Network final=${processed.text.length}ch total=${Date.now() - t0}ms`);
+            this._log.debug(`\n`+ processed.text);
 
             // Step 14: Cache & return
             const choices: CompletionChoice[] = [{

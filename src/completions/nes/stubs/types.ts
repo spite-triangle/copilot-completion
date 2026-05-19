@@ -138,6 +138,8 @@ export interface WorkspaceRoot {
 export interface StatelessNextEditDocument {
     id: DocumentId;
     workspaceRoot?: WorkspaceRoot;
+    languageId?: string;
+    documentAfterEditsLines?: string[];
 }
 
 // ========================================================================

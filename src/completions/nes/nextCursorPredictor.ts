@@ -3,43 +3,85 @@ import { IInstantiationService } from '../../di/instantiation';
 import { ILLMAdapterManager } from '../shared/llm/llmAdapter';
 import { INesConfigProvider } from '../../config/nesConfig';
 import { ILogService } from '../shared/log/logService';
-
-export type CursorJumpPrediction =
-    | { readonly kind: 'sameFile'; readonly lineNumber: number }
-    | { readonly kind: 'differentFile'; readonly filePath: string; readonly lineNumber: number };
+import { PromptingStrategy, IncludeLineNumbersOption } from './stubs/types';
+import { constructTaggedFile, getUserPrompt, PromptPieces } from './promptCrafting';
+import { CursorJumpPrediction } from './types';
+import { OffsetRange } from './stubs/offsetRange';
+import { Result } from './stubs/result';
 
 const SYSTEM_MSG = 'Your task is to predict the line number where the developer is most likely to make their next edit. If you jump in the current file, just output the line number. If you want to jump to another file, output the filepath (relative to workspace root), colon, then line number. Output no explanation.';
 
 export class NextCursorPredictor {
+    private _isDisabled = false;
+
     constructor(
         @IInstantiationService private readonly _instaService: IInstantiationService,
         @INesConfigProvider private readonly _config: INesConfigProvider,
         @ILLMAdapterManager private readonly _llmManager: ILLMAdapterManager,
         @ILogService private readonly _log: ILogService,
-    ) { }
+    ) {}
+
+    isEnabled(): boolean {
+        if (this._isDisabled) {
+            return false;
+        }
+        return this._config.nextCursorPredictionEnabled;
+    }
 
     async predict(
-        document: vscode.TextDocument,
-        position: vscode.Position,
+        promptPieces: PromptPieces,
         token?: vscode.CancellationToken,
-    ): Promise<CursorJumpPrediction | undefined> {
-        const text = document.getText().replace(/\r\n/g, '\n');
-        const lines = text.split('\n');
-        const cursorLine = position.line;
+    ): Promise<Result<CursorJumpPrediction, string>> {
+        const computeTokens = (s: string) => Math.floor(s.length / 4);
 
-        // Build a compact prompt: 15 lines above cursor + cursor line marked + 15 below
-        const startLine = Math.max(0, cursorLine - 15);
-        const endLine = Math.min(lines.length, cursorLine + 16);
-        const snippet: string[] = [];
-        for (let i = startLine; i < endLine; i++) {
-            if (i === cursorLine) {
-                snippet.push(`${i}|${lines[i].substring(0, position.character)}<|cursor|>${lines[i].substring(position.character)}`);
-            } else {
-                snippet.push(`${i}|${lines[i]}`);
-            }
+        const taggedR = constructTaggedFile(
+            promptPieces.currentDocument,
+            promptPieces.editWindowLinesRange,
+            promptPieces.areaAroundEditWindowLinesRange,
+            {
+                ...promptPieces.opts,
+                currentFile: {
+                    ...promptPieces.opts.currentFile,
+                    maxTokens: 4000,
+                    includeTags: false,
+                },
+                includePostScript: false,
+            },
+            computeTokens,
+            {
+                includeLineNumbers: {
+                    areaAroundCodeToEdit: IncludeLineNumbersOption.None,
+                    currentFileContent: IncludeLineNumbersOption.WithSpaceAfter,
+                },
+            },
+        );
+
+        if (taggedR.isError()) {
+            this._log.debug(`[NCP] prompt too large`);
+            return Result.error('promptTooLarge');
         }
 
-        const userPrompt = `current_file: ${document.uri.toString()}\n${snippet.join('\n')}`;
+        const { clippedTaggedCurrentDoc, areaAroundCodeToEdit } = taggedR.val;
+
+        const newPromptPieces = new PromptPieces(
+            promptPieces.currentDocument,
+            promptPieces.editWindowLinesRange,
+            promptPieces.areaAroundEditWindowLinesRange,
+            promptPieces.activeDoc,
+            promptPieces.xtabHistory,
+            clippedTaggedCurrentDoc.lines,
+            areaAroundCodeToEdit,
+            promptPieces.langCtx,
+            promptPieces.aggressivenessLevel,
+            promptPieces.lintErrors,
+            computeTokens,
+            {
+                ...promptPieces.opts,
+                includePostScript: false,
+            },
+        );
+
+        const { prompt: userMessage } = getUserPrompt(newPromptPieces);
 
         try {
             const endpoint = this._config.supportedEndpoint;
@@ -51,7 +93,7 @@ export class NextCursorPredictor {
                 {
                     messages: [
                         { role: 'system', content: SYSTEM_MSG },
-                        { role: 'user', content: userPrompt },
+                        { role: 'user', content: userMessage },
                     ],
                     max_tokens: 64,
                     temperature: 0,
@@ -60,25 +102,52 @@ export class NextCursorPredictor {
             );
 
             cancelListener?.dispose();
-            return this._parse(response.text.trim());
-        } catch {
-            return undefined;
+
+            if (response.text.trim() === '') {
+                return Result.error('emptyResponse');
+            }
+
+            return this._parseResponse(response.text.trim(), clippedTaggedCurrentDoc.keptRange);
+        } catch (err: unknown) {
+            if ((err as { name?: string })?.name === 'AbortError') {
+                return Result.error('aborted');
+            }
+            this._log.error(`[NCP] ERROR: ${err}`);
+
+            // Disable for session on 404/not-found
+            const msg = String(err);
+            if (msg.includes('404') || msg.includes('not found') || msg.includes('NotFound')) {
+                this._isDisabled = true;
+                this._log.info(`[NCP] disabled for session due to endpoint error`);
+            }
+            return Result.error(`fetchError:${msg}`);
         }
     }
 
-    private _parse(trimmed: string): CursorJumpPrediction | undefined {
+    private _parseResponse(trimmed: string, keptRange: OffsetRange): Result<CursorJumpPrediction, string> {
         const lineNumber = parseInt(trimmed, 10);
         if (!isNaN(lineNumber) && String(lineNumber) === trimmed) {
-            if (lineNumber < 0) return undefined;
-            return { kind: 'sameFile', lineNumber };
+            if (lineNumber < 0) {
+                return Result.error('negativeLineNumber');
+            }
+            if (lineNumber < keptRange.start || keptRange.endExclusive <= lineNumber) {
+                return Result.error('modelNotSeenLineNumber');
+            }
+            return Result.ok({ kind: 'sameFile', lineNumber });
         }
 
         const lastColonIdx = trimmed.lastIndexOf(':');
-        if (lastColonIdx <= 0) return undefined;
+        if (lastColonIdx <= 0) {
+            return Result.error('gotNaN');
+        }
 
         const filePath = trimmed.substring(0, lastColonIdx).trim();
         const crossLine = parseInt(trimmed.substring(lastColonIdx + 1), 10);
-        if (isNaN(crossLine) || crossLine < 0 || filePath.length === 0) return undefined;
-        return { kind: 'differentFile', filePath, lineNumber: crossLine };
+
+        if (isNaN(crossLine) || crossLine < 0 || filePath.length === 0) {
+            return Result.error('crossFileInvalidLineNumber');
+        }
+
+        return Result.ok({ kind: 'differentFile', filePath, lineNumber: crossLine });
     }
 }

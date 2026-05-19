@@ -5,6 +5,11 @@ export interface InlineSuggestionEdit {
     readonly newText: string;
 }
 
+/** Normalize document text: replace CRLF → LF for consistent comparison. */
+function getTextNormalized(doc: vscode.TextDocument, range: vscode.Range): string {
+    return doc.getText(range).replace(/\r\n/g, '\n');
+}
+
 /**
  * Determines whether an edit can be displayed as an inline (ghost text) suggestion
  * at the cursor position. If so, returns the possibly-adjusted range and text.
@@ -52,7 +57,7 @@ export class InlineSuggestionResolver {
         const noLeftoverAfterInsertion = newText.endsWith('\n') || (newText.includes('\n') && targetLineFullyConsumed);
         if (!noLeftoverAfterInsertion) return undefined;
 
-        const lineBreak = doc.getText(new vscode.Range(cursorPos, range.start));
+        const lineBreak = getTextNormalized(doc, new vscode.Range(cursorPos, range.start));
         const trimmedNewText = newText.replace(/\r?\n$/, '');
         return { range: new vscode.Range(cursorPos, cursorPos), newText: lineBreak + trimmedNewText };
     }
@@ -62,7 +67,7 @@ export class InlineSuggestionResolver {
         range: vscode.Range,
         newText: string,
     ): { range: vscode.Range; newText: string } {
-        const replacedText = doc.getText(range);
+        const replacedText = getTextNormalized(doc, range);
         const maxLen = Math.min(replacedText.length, newText.length);
         let commonLen = 0;
         while (commonLen < maxLen && replacedText[commonLen] === newText[commonLen]) {
@@ -84,7 +89,7 @@ export class InlineSuggestionResolver {
         range: vscode.Range,
         newText: string,
     ): InlineSuggestionEdit | undefined {
-        const replacedText = doc.getText(range);
+        const replacedText = getTextNormalized(doc, range);
         const cursorOffsetInReplacedText = cursorPos.character - range.start.character;
         if (cursorOffsetInReplacedText < 0) return undefined;
         if (

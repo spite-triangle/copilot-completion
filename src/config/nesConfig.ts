@@ -83,12 +83,12 @@ export class VSCodeNesConfigProvider implements INesConfigProvider {
 
     get suffixOverlapThreshold(): number {
         return vscode.workspace.getConfiguration()
-            .get<number>(ConfigKeys.Nes.suffixOverlapThreshold, 0.5);
+            .get<number>(ConfigKeys.Nes.suffixOverlapThreshold, 0.85);
     }
 
     get suffixOverlapType(): 'low' | 'high' {
         return vscode.workspace.getConfiguration()
-            .get<'low' | 'high'>(ConfigKeys.Nes.suffixOverlapType, 'low');
+            .get<'low' | 'high'>(ConfigKeys.Nes.suffixOverlapType, 'high');
     }
 
     get presencePenalty(): number {
