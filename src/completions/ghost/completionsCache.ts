@@ -1,4 +1,5 @@
 import { createServiceIdentifier } from '../../di/services';
+import { LRURadixTrie } from './radix';
 
 export const IGhostCompletionsCache = createServiceIdentifier<IGhostCompletionsCache>('IGhostCompletionsCache');
 
@@ -14,44 +15,57 @@ export interface CompletionChoice {
     finishReason: string;
 }
 
+interface CacheContent{
+    suffix: string;
+    choice: CompletionChoice;
+};
+
+interface CacheContents {
+    content: CacheContent[];
+}
+
+/** Caches recent completions by document prefix using a radix trie for prefix-aware matching. */
 export class GhostCompletionsCache implements IGhostCompletionsCache {
     readonly _serviceBrand: undefined;
-    private readonly _cache: Map<string, CompletionChoice[]>;
-    private readonly _keys: string[];
 
-    constructor(private readonly _maxSize: number = 100) {
-        this._cache = new Map();
-        this._keys = [];
+    private cache: LRURadixTrie<CacheContents>;
+    private readonly _maxSize: number;
+
+    constructor(maxSize: number = 100) {
+        this._maxSize = maxSize;
+        this.cache = new LRURadixTrie<CacheContents>(maxSize);
     }
 
-    private _makeKey(prefix: string, suffix: string): string {
-        return `${prefix}\0${suffix}`;
-    }
-
+    /** Given a document prefix and suffix, return all of the completions that match. */
     findAll(prefix: string, suffix: string): CompletionChoice[] {
-        return this._cache.get(this._makeKey(prefix, suffix)) || [];
+        return this.cache.findAll(prefix).flatMap(({ remainingKey, value }) =>
+            value.content
+                .filter((c: CacheContent)  =>
+                    c.suffix === suffix &&
+                    c.choice.text.startsWith(remainingKey) &&
+                    c.choice.text.length > remainingKey.length
+                )
+                .map((c:CacheContent) => ({
+                    ...c.choice,
+                    text: c.choice.text.slice(remainingKey.length),
+                }))
+        );
     }
 
+    /** Add cached completions for a given prefix. */
     append(prefix: string, suffix: string, choice: CompletionChoice): void {
-        const key = this._makeKey(prefix, suffix);
-        const existing = this._cache.get(key) || [];
-        existing.push(choice);
-        this._cache.set(key, existing);
-
-        const idx = this._keys.indexOf(key);
-        if (idx >= 0) {
-            this._keys.splice(idx, 1);
-        }
-        this._keys.push(key);
-
-        while (this._keys.length > this._maxSize) {
-            const oldest = this._keys.shift()!;
-            this._cache.delete(oldest);
+        const existing = this.cache.findAll(prefix);
+        // Append to an existing array if there is an exact match.
+        if (existing.length > 0 && existing[0].remainingKey === '') {
+            const content = existing[0].value.content;
+            this.cache.set(prefix, { content: [...content, { suffix, choice }] });
+        } else {
+            // Otherwise, add a new value.
+            this.cache.set(prefix, { content: [{ suffix, choice }] });
         }
     }
 
     clear(): void {
-        this._cache.clear();
-        this._keys.length = 0;
+        this.cache = new LRURadixTrie<CacheContents>(this._maxSize);
     }
 }

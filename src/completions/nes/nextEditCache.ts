@@ -1,10 +1,11 @@
 import { createServiceIdentifier } from '../../di/services';
+import { DocumentId } from './stubs/types';
 
 export const INextEditCache = createServiceIdentifier<INextEditCache>('INextEditCache');
 
 export interface CachedEdit {
-    docId: string;
-    docContentHash: string;
+    docId: DocumentId;
+    documentBeforeEdit: string;
     editWindow: { startLine: number; endLineExclusive: number };
     edit: string;
     cacheTime: number;
@@ -19,50 +20,69 @@ export interface CachedOrRebasedEdit extends CachedEdit {
 
 export interface INextEditCache {
     readonly _serviceBrand: undefined;
-    setKthNextEdit(docId: string, edit: CachedEdit): void;
-    lookupNextEdit(docId: string, document: { getText(): string }): CachedOrRebasedEdit | undefined;
-    clear(docId: string): void;
+    setKthNextEdit(docId: DocumentId, edit: CachedEdit): void;
+    /**
+     * Look up a cached edit for the given document and cursor position.
+     * The position is validated against the cached edit's editWindow
+     * to prevent serving edits cached for a different cursor location.
+     */
+    lookupNextEdit(docId: DocumentId, document: { getText(): string }, position: { line: number }): CachedOrRebasedEdit | undefined;
+    clear(docId: DocumentId): void;
     clearAll(): void;
 }
 
 export class NextEditCache implements INextEditCache {
     readonly _serviceBrand: undefined;
-    private readonly _cache = new Map<string, CachedEdit[]>();
-    private readonly _maxPerDoc = 10;
+    private readonly _cache = new Map<string, CachedEdit>();
+    private readonly _maxEntries = 50;
 
-    setKthNextEdit(docId: string, edit: CachedEdit): void {
-        const entries = this._cache.get(docId) || [];
-        entries.push(edit);
-        while (entries.length > this._maxPerDoc) {
-            entries.shift();
+    setKthNextEdit(docId: DocumentId, edit: CachedEdit): void {
+        const key = this._getKey(docId.uri, edit.documentBeforeEdit);
+        const existing = this._cache.get(key);
+        if (existing) {
+            this._cache.delete(key);
         }
-        this._cache.set(docId, entries);
+        this._cache.set(key, edit);
+        // Enforce max entries: evict first inserted (simple FIFO eviction)
+        if (this._cache.size > this._maxEntries) {
+            const firstKey = this._cache.keys().next().value;
+            if (firstKey !== undefined) {
+                this._cache.delete(firstKey);
+            }
+        }
     }
 
-    lookupNextEdit(docId: string, document: { getText(): string }): CachedOrRebasedEdit | undefined {
-        const entries = this._cache.get(docId);
-        if (!entries || entries.length === 0) return undefined;
-
+    lookupNextEdit(docId: DocumentId, document: { getText(): string }, position: { line: number }): CachedOrRebasedEdit | undefined {
         const docText = document.getText();
-        const docHash = this._hash(docText);
-        return entries.find(e => e.docContentHash === docHash);
+        const key = this._getKey(docId.uri, docText);
+        const cached = this._cache.get(key);
+        if (cached) {
+            // Validate that the cursor is still within the edit window.
+            // Without this check a cached edit from line 5 would be
+            // incorrectly served when the user moves to line 100 without
+            // changing the document text.
+            const { startLine, endLineExclusive } = cached.editWindow;
+            if (position.line < startLine || position.line >= endLineExclusive) {
+                return undefined;
+            }
+            return cached;
+        }
+        return undefined;
     }
 
-    clear(docId: string): void {
-        this._cache.delete(docId);
+    clear(docId: DocumentId): void {
+        for (const [key, entry] of this._cache) {
+            if (entry.docId === docId) {
+                this._cache.delete(key);
+            }
+        }
     }
 
     clearAll(): void {
         this._cache.clear();
     }
 
-    private _hash(text: string): string {
-        let hash = 0;
-        for (let i = 0; i < text.length; i++) {
-            const char = text.charCodeAt(i);
-            hash = ((hash << 5) - hash) + char;
-            hash |= 0;
-        }
-        return hash.toString(36);
+    private _getKey(docUri: string, content: string): string {
+        return JSON.stringify([docUri, content]);
     }
 }

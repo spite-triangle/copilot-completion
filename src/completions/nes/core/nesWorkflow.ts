@@ -64,7 +64,7 @@ export class NesWorkflow {
 
         // Step 1: Cache lookup
         const t1 = Date.now();
-        const cached = this._cache.lookupNextEdit(document.uri.toString(), document);
+        const cached = this._cache.lookupNextEdit(DocumentId.create(document.uri.toString()), document, position);
         if (cached) {
             this._log.info(`[NES]  CACHE_HIT edit=${cached.edit.length}ch age=${Date.now() - cached.cacheTime}ms total=${Date.now() - t0}ms`);
             if (token?.isCancellationRequested) {
@@ -160,8 +160,8 @@ export class NesWorkflow {
             // Step 7: Cache result
             const docText = document.getText();
             const cacheEntry: CachedEdit = {
-                docId: document.uri.toString(),
-                docContentHash: this._hash(docText),
+                docId: DocumentId.create(document.uri.toString()),
+                documentBeforeEdit: docText,
                 editWindow: {
                     startLine: Math.max(0, position.line - 2),
                     endLineExclusive: position.line + 6,
@@ -169,7 +169,7 @@ export class NesWorkflow {
                 edit: finalEdit,
                 cacheTime: Date.now(),
             };
-            this._cache.setKthNextEdit(document.uri.toString(), cacheEntry);
+            this._cache.setKthNextEdit(cacheEntry.docId, cacheEntry);
 
             result.cacheEntry = cacheEntry;
 
@@ -205,15 +205,6 @@ export class NesWorkflow {
             this._config.suffixOverlapType,
             this._log
         );
-    }
-
-    private _hash(text: string): string {
-        let hash = 0;
-        for (let i = 0; i < text.length; i++) {
-            hash = ((hash << 5) - hash) + text.charCodeAt(i);
-            hash |= 0;
-        }
-        return hash.toString(36);
     }
 
     private _trunc(s: string, max: number): string {
