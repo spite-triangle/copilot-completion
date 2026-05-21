@@ -1,19 +1,26 @@
 import { LineRange, LineReplacement } from './lineReplacement';
 
+/** Minimum number of "significant" (alphanumeric) lines that must match consecutively to converge. */
+const N_SIGNIFICANT_LINES_TO_CONVERGE = 2;
+/** Minimum total number of lines that must match consecutively to converge. */
+const N_LINES_TO_CONVERGE = 3;
+
 /**
  * Equivalent of the reference's ResponseProcessor.diff().
  *
  * Algorithm (synchronous adaptation of the reference streaming diff):
  * 1. Walk both arrays position-by-position.
  * 2. When lines match: advance both pointers.
- * 3. When mismatch: find the re-alignment point where lines match again.
- *    The change region covers original lines from mismatch to re-alignment,
- *    replaced by the response lines accumulated during the divergence.
- * 4. If no re-alignment found (end of one array), emit the remaining divergence.
+ * 3. When mismatch: accumulate response lines and check for convergence —
+ *    the suffix of accumulated lines must match multiple consecutive original
+ *    lines (with at least N_SIGNIFICANT_LINES_TO_CONVERGE significant matches
+ *    or N_LINES_TO_CONVERGE total matches) before the divergence is closed.
+ * 4. If no convergence found (end of one array), emit the remaining divergence.
  */
 export class ResponseDiffer {
 
     compute(originalLines: string[], responseLines: string[]): LineReplacement[] {
+        const lineToIdxs = buildLineIndex(originalLines);
         const edits: LineReplacement[] = [];
         let origIdx = 0;
         let respIdx = 0;
@@ -27,64 +34,63 @@ export class ResponseDiffer {
                 continue;
             }
 
-            // Divergence: find the re-alignment point
+            // Divergence: accumulate response lines, checking for convergence
             const divergenceStart = origIdx;
             const newLines: string[] = [];
+            let converged = false;
 
-            // Accumulate response lines from the divergence point
             while (respIdx < responseLines.length) {
                 newLines.push(responseLines[respIdx]);
                 respIdx++;
 
-                // Check if this response line re-aligns with any upcoming original line
-                const reAlignOrig = findReAlignment(originalLines, origIdx, responseLines, respIdx);
-                if (reAlignOrig !== undefined) {
-                    // Found re-alignment: response[respIdx] matches original[reAlignOrig]
-                    // The change covers original[divergenceStart..reAlignOrig)
-                    const origEnd = reAlignOrig;
+                const conv = tryConverge(originalLines, divergenceStart, newLines, lineToIdxs);
+                if (conv) {
+                    const insertLines = newLines.slice(0, newLines.length - conv.nConvergingLines);
                     edits.push(new LineReplacement(
                         {
                             startLineNumber: divergenceStart + 1, // 1-based
-                            endLineNumberExclusive: origEnd + 1,
+                            endLineNumberExclusive: conv.origConvIdx + 1,
                         },
-                        newLines,
+                        insertLines,
                     ));
-                    origIdx = origEnd;
+                    origIdx = conv.origConvIdx + conv.nConvergingLines;
+                    converged = true;
                     break;
                 }
             }
 
-            // If we exhausted responseLines without finding re-alignment,
-            // emit a replacement covering remaining original lines
-            if (respIdx >= responseLines.length && origIdx < originalLines.length) {
-                edits.push(new LineReplacement(
-                    {
-                        startLineNumber: divergenceStart + 1,
-                        endLineNumberExclusive: originalLines.length + 1,
-                    },
-                    newLines,
-                ));
-                origIdx = originalLines.length;
-            } else if (origIdx >= originalLines.length && respIdx < responseLines.length) {
-                // Original exhausted but more response lines remain — pure insertion at end
-                const insertLines = responseLines.slice(respIdx);
-                edits.push(new LineReplacement(
-                    {
-                        startLineNumber: originalLines.length + 1,
-                        endLineNumberExclusive: originalLines.length + 1,
-                    },
-                    insertLines,
-                ));
-                respIdx = responseLines.length;
-            } else if (newLines.length > 0) {
-                // Both sides exhausted with accumulated newLines that never re-aligned
-                edits.push(new LineReplacement(
-                    {
-                        startLineNumber: divergenceStart + 1,
-                        endLineNumberExclusive: origIdx + 1,
-                    },
-                    newLines,
-                ));
+            // Handle exhaustion only when convergence was not reached
+            if (!converged) {
+                if (respIdx >= responseLines.length && origIdx < originalLines.length) {
+                    edits.push(new LineReplacement(
+                        {
+                            startLineNumber: divergenceStart + 1,
+                            endLineNumberExclusive: originalLines.length + 1,
+                        },
+                        newLines,
+                    ));
+                    origIdx = originalLines.length;
+                } else if (origIdx >= originalLines.length && respIdx < responseLines.length) {
+                    // Original exhausted but more response lines remain — pure insertion at end
+                    const insertLines = responseLines.slice(respIdx);
+                    edits.push(new LineReplacement(
+                        {
+                            startLineNumber: originalLines.length + 1,
+                            endLineNumberExclusive: originalLines.length + 1,
+                        },
+                        insertLines,
+                    ));
+                    respIdx = responseLines.length;
+                } else if (newLines.length > 0) {
+                    // Both sides exhausted with accumulated newLines that never converged
+                    edits.push(new LineReplacement(
+                        {
+                            startLineNumber: divergenceStart + 1,
+                            endLineNumberExclusive: origIdx + 1,
+                        },
+                        newLines,
+                    ));
+                }
             }
         }
 
@@ -92,26 +98,108 @@ export class ResponseDiffer {
     }
 }
 
+function isSignificant(s: string): boolean {
+    return /[a-zA-Z1-9]+/.test(s);
+}
+
+function buildLineIndex(lines: string[]): Map<string, number[]> {
+    const map = new Map<string, number[]>();
+    for (let i = 0; i < lines.length; i++) {
+        const existing = map.get(lines[i]);
+        if (existing) {
+            existing.push(i);
+        } else {
+            map.set(lines[i], [i]);
+        }
+    }
+    return map;
+}
+
 /**
- * Find a re-alignment point: look for a position `i` in originalLines (i >= origIdx)
- * where originalLines[i] matches the NEXT response line (at respIdx).
- * Returns the original index where alignment resumes, or undefined.
+ * Checks whether the suffix of `newLines` matches consecutive lines in
+ * `originalLines` starting from `divergenceStart`. Returns the convergence
+ * point (original index where matching region starts) and the number of
+ * converging lines, or undefined if convergence criteria aren't met.
  */
-function findReAlignment(
+function tryConverge(
     originalLines: string[],
-    origIdx: number,
-    responseLines: string[],
-    respIdx: number,
-): number | undefined {
-    if (respIdx >= responseLines.length) {
+    divergenceStart: number,
+    newLines: string[],
+    lineToIdxs: Map<string, number[]>,
+): { origConvIdx: number; nConvergingLines: number } | undefined {
+    if (newLines.length === 0) {
         return undefined;
     }
 
-    const nextRespLine = responseLines[respIdx];
-    for (let i = origIdx; i < originalLines.length; i++) {
-        if (originalLines[i].trimEnd() === nextRespLine.trimEnd()) {
-            return i;
+    const lastLine = newLines[newLines.length - 1];
+    const matchIdxs = lineToIdxs.get(lastLine);
+    if (!matchIdxs || matchIdxs.length === 0) {
+        return undefined;
+    }
+
+    for (const convEndIdx of matchIdxs) {
+        if (convEndIdx < divergenceStart) {
+            continue;
+        }
+
+        const result = tryConvergeAt(originalLines, divergenceStart, newLines, convEndIdx);
+        if (result) {
+            return result;
         }
     }
+
+    return undefined;
+}
+
+function tryConvergeAt(
+    originalLines: string[],
+    divergenceStart: number,
+    newLines: string[],
+    convEndIdx: number,
+): { origConvIdx: number; nConvergingLines: number } | undefined {
+    const lastNewLine = newLines[newLines.length - 1];
+    let nNonSigMatches = 1;
+    let nSigMatches = isSignificant(lastNewLine) ? 1 : 0;
+
+    // When every original line from divergence to match is accounted for
+    // by the response (pure replacement, no skipping), treat as significant.
+    if (nNonSigMatches > 0 && convEndIdx - divergenceStart === newLines.length - 1) {
+        nSigMatches = Math.max(nSigMatches, N_SIGNIFICANT_LINES_TO_CONVERGE);
+    }
+
+    let newLinesIdx = newLines.length - 2;
+    let convIdx = convEndIdx - 1;
+
+    while (newLinesIdx >= 0 && convIdx >= divergenceStart) {
+        if (originalLines[convIdx] !== newLines[newLinesIdx]) {
+            break;
+        }
+
+        nNonSigMatches++;
+        if (isSignificant(newLines[newLinesIdx])) {
+            nSigMatches++;
+        }
+
+        const converged = nSigMatches >= N_SIGNIFICANT_LINES_TO_CONVERGE
+            || nNonSigMatches >= N_LINES_TO_CONVERGE;
+
+        if (converged) {
+            const nLinesToConverge = convEndIdx - convIdx + 1;
+            const nLinesRemoved = convIdx - divergenceStart;
+            const linesInserted = newLines.slice(0, newLines.length - nLinesToConverge);
+            const nLinesInserted = linesInserted.length;
+
+            // Reject convergence that removes far more original lines than inserted
+            if (nLinesRemoved - nLinesInserted > 1 && nLinesInserted > 0) {
+                return undefined;
+            }
+
+            return { origConvIdx: convIdx, nConvergingLines: nLinesToConverge };
+        }
+
+        convIdx--;
+        newLinesIdx--;
+    }
+
     return undefined;
 }

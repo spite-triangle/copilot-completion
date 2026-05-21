@@ -1,15 +1,31 @@
 {
-  "name": "cc-completion",
-  "displayName": "CC Completion",
+  "name": "copilot-completion",
+  "displayName": "Copilot Completion",
   "description": "Code completion powered by LLM — GHOST (FIM) and NES (Next Edit Suggestion)",
-  "version": "0.0.1",
+  "version": "1.0.0",
   "engines": {
     "vscode": "^1.110.0"
   },
+	"buildType": "dev",
+	"publisher": "spite-triangle",
+	"homepage": "https://github.com/spite-triangle/copilot-completion",
+	"license": "SEE LICENSE IN LICENSE.txt",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/spite-triangle/copilot-completion.git"
+	},
   "categories": [
-    "Machine Learning",
-    "Other"
+		"AI",
+		"Programming Languages"
   ],
+  "keywords":[
+    "ai",
+    "completion",
+    "fim",
+    "copilot",
+    "autocomplete"
+  ],
+  "icon": "assets/copilot.png",
   "activationEvents": [
     "onStartupFinished"
   ],
@@ -21,17 +37,12 @@
     "commands": [
       {
         "command": "cc-completion.togglePanel",
-        "title": "Toggle CC Completion Panel"
+        "title": "Toggle Copilot Completion Panel"
       }
     ],
     "configuration": {
       "title": "CC Completion",
       "properties": {
-        "cc-completion.ghost.enabled": {
-          "type": "boolean",
-          "default": true,
-          "description": "Enable Ghost Inline Completion (FIM)"
-        },
         "cc-completion.ghost.baseUrl": {
           "type": "string",
           "default": "",
@@ -54,7 +65,7 @@
         },
         "cc-completion.ghost.capabilities.limits.max_output_tokens": {
           "type": "number",
-          "default": 256,
+          "default": 512,
           "description": "Max output tokens for GHOST (hard cap)"
         },
         "cc-completion.ghost.capabilities.limits.max_context_window_tokens": {
@@ -64,7 +75,7 @@
         },
         "cc-completion.ghost.capabilities.limits.delay": {
           "type": "number",
-          "default": 200,
+          "default": 150,
           "description": "Minimum delay (ms) between GHOST network requests"
         },
         "cc-completion.ghost.suffixOverlapThreshold": {
@@ -100,11 +111,6 @@
           "default": true,
           "description": "Enable SSE streaming for GHOST completions"
         },
-        "cc-completion.nes.enabled": {
-          "type": "boolean",
-          "default": true,
-          "description": "Enable Next Edit Suggestion (NES)"
-        },
         "cc-completion.nes.baseUrl": {
           "type": "string",
           "default": "",
@@ -123,16 +129,14 @@
         "cc-completion.nes.supportedEndpoint": {
           "type": "string",
           "enum": [
-            "chat/completions",
-            "responses",
-            "messages"
+            "chat/completions"
           ],
           "default": "chat/completions",
           "description": "LLM API endpoint for NES"
         },
         "cc-completion.nes.capabilities.limits.max_output_tokens": {
           "type": "number",
-          "default": 4096,
+          "default": 8192,
           "description": "Max output tokens for NES (hard cap)"
         },
         "cc-completion.nes.capabilities.limits.max_context_window_tokens": {

@@ -71,6 +71,10 @@ ${currentFileContent}
 ${PromptTags.CURRENT_FILE.end}
 ${lintsWithNewLinePadding}
 ${PromptTags.EDIT_HISTORY.start}
+Edit history from top to bottom: 
+- the higher up, the older
+- the further down, the newer
+
 ${editDiffHistory}
 ${PromptTags.EDIT_HISTORY.end}`;
 
@@ -365,7 +369,6 @@ export function constructTaggedFile(
 
 	const editWindowWithCursorAsLines = contentWithCursorAsLines.slice(editWindowLinesRange.start, editWindowLinesRange.endExclusive);
 
-	// NOTE - 按照以下结构修改
 	const areaAroundCodeToEdit = [
 		PromptTags.AREA_AROUND.start,
 		PromptTags.AREA_CODE_PREFIX.start,

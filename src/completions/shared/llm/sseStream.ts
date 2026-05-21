@@ -47,11 +47,16 @@ export async function readSSEStream(
     const stream = response.body!.pipeThrough(new TextDecoderStream());
     let extra = '';
 
+    const reader = stream.getReader();
     try {
-        for await (const rawChunk of stream) {
+        while (true) {
             if (signal?.aborted) return;
 
-            const [lines, remainder] = splitChunk(extra + rawChunk);
+            const { value: rawChunk, done } = await reader.read();
+            if (done) break;
+            const chunkStr = rawChunk ?? '';
+
+            const [lines, remainder] = splitChunk(extra + chunkStr);
             extra = remainder;
 
             for (const line of lines) {
@@ -66,6 +71,7 @@ export async function readSSEStream(
             }
         }
     } finally {
+        try { await reader.cancel(); } catch { /* ignore */ }
         try { await response.body?.cancel(); } catch { /* ignore */ }
     }
 }

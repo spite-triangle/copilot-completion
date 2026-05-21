@@ -78,12 +78,12 @@ export class VSCodeGhostConfigProvider implements IGhostConfigProvider {
 
     get maxOutputTokens(): number {
         return vscode.workspace.getConfiguration()
-            .get<number>(ConfigKeys.Ghost.maxOutputTokens, 256);
+            .get<number>(ConfigKeys.Ghost.maxOutputTokens, 512);
     }
 
     get delay(): number {
         return vscode.workspace.getConfiguration()
-            .get<number>(ConfigKeys.Ghost.delay, 200);
+            .get<number>(ConfigKeys.Ghost.delay, 150);
     }
 
     get suffixOverlapThreshold(): number {

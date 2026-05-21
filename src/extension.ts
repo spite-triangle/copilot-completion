@@ -135,20 +135,21 @@ function registerLLMAdapters(
                 nesConfig.stream,
             ));
             break;
-        case 'responses':
-            llmManager.register('responses', new OpenAIResponseAdapter(
-                baseUrl, apiKey, model,
-                nesConfig.presencePenalty,
-                nesConfig.frequencyPenalty,
-                nesConfig.stream,
-            ));
-            break;
-        case 'messages':
-            llmManager.register('messages', new AnthropicAdapter(
-                baseUrl, apiKey, model,
-                nesConfig.stream,
-            ));
-            break;
+        // TODO - support other endpoints like 'responses' and 'messages' once we have a use case for them
+        // case 'responses':
+        //     llmManager.register('responses', new OpenAIResponseAdapter(
+        //         baseUrl, apiKey, model,
+        //         nesConfig.presencePenalty,
+        //         nesConfig.frequencyPenalty,
+        //         nesConfig.stream,
+        //     ));
+        //     break;
+        // case 'messages':
+        //     llmManager.register('messages', new AnthropicAdapter(
+        //         baseUrl, apiKey, model,
+        //         nesConfig.stream,
+        //     ));
+        //     break;
     }
     log.debug(`Registered NES adapter: ${endpoint}`);
 }
