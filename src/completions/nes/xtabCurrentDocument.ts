@@ -1,4 +1,4 @@
-import { BugIndicatingError } from './stubs/errors';
+import { BugIndicatingError } from '../../common/errors';
 import { Position } from './stubs/position';
 import { StringText } from './stubs/abstractText';
 import { PositionOffsetTransformer } from './stubs/positionToOffsetImpl';

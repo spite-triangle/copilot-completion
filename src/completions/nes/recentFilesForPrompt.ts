@@ -3,7 +3,7 @@ import { LanguageContextResponse, ContextKind } from './stubs/languageContext';
 import { StringText } from './stubs/abstractText';
 import { OffsetRange } from './stubs/offsetRange';
 import { batchArrayElements } from '../../common/arrays';
-import { illegalArgument } from './stubs/errors';
+import { illegalArgument } from '../../common/errors';
 import { expandRangeToPageRange } from './promptCrafting';
 import { countTokensForLines, toUniquePath } from './promptCraftingUtils';
 import { INeighborFileSnippet } from './similarFilesContextService';

@@ -1,8 +1,7 @@
 import * as vscode from 'vscode';
 import { IInstantiationService } from '../../di/instantiation';
 import { GhostTextComputer, GhostTextResult } from './ghostTextComputer';
-import { CurrentGhostText } from './current';
-import { LastGhostText } from './last';
+import { CurrentGhostText, LastGhostText } from './ghostTextState';
 
 export class GhostText {
     constructor(

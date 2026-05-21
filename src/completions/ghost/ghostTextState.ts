@@ -27,3 +27,7 @@ export class CurrentGhostText {
         return false;
     }
 }
+
+export class LastGhostText {
+    resetState(): void {}
+}
