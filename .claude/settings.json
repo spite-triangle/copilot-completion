@@ -1,6 +1,0 @@
-{
-  "enabledPlugins": {
-    "superpowers@claude-plugins-official": true,
-    "andrej-karpathy-skills@karpathy-skills": true
-  }
-}
