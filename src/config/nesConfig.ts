@@ -44,8 +44,26 @@ export class VSCodeNesConfigProvider implements INesConfigProvider {
     private readonly _onDidChangeEnabled = new vscode.EventEmitter<void>();
     private readonly _enabledKey = 'nes.enabled';
     private readonly _ncpKey = 'nes.nextCursorPredictionEnabled';
+    private readonly _cache = new Map<string, unknown>();
 
-    constructor(private readonly _context: vscode.ExtensionContext) {}
+    constructor(private readonly _context: vscode.ExtensionContext) {
+        _context.subscriptions.push(
+            vscode.workspace.onDidChangeConfiguration(e => {
+                if (e.affectsConfiguration('cc-completion.nes')) {
+                    this._cache.clear();
+                }
+            }),
+        );
+    }
+
+    private _cached<T>(key: string, defaultValue: T): T {
+        if (this._cache.has(key)) {
+            return this._cache.get(key) as T;
+        }
+        const value = vscode.workspace.getConfiguration().get<T>(key, defaultValue);
+        this._cache.set(key, value);
+        return value;
+    }
 
     get enabled(): boolean {
         return this._context.workspaceState.get<boolean>(this._enabledKey, true);
@@ -70,24 +88,27 @@ export class VSCodeNesConfigProvider implements INesConfigProvider {
     }
 
     get baseUrl(): string {
-        return vscode.workspace.getConfiguration().get<string>(ConfigKeys.Nes.baseUrl, '');
+        return this._cached<string>(ConfigKeys.Nes.baseUrl, '');
     }
 
     get apiKey(): string {
-        return vscode.workspace.getConfiguration().get<string>(ConfigKeys.Nes.apiKey, '');
+        return this._cached<string>(ConfigKeys.Nes.apiKey, '');
     }
 
     get model(): string {
-        return vscode.workspace.getConfiguration().get<string>(ConfigKeys.Nes.model, 'gpt-4o');
+        return this._cached<string>(ConfigKeys.Nes.model, 'gpt-4o');
     }
 
     get supportedEndpoint(): NesSupportedEndpoint {
-        return vscode.workspace.getConfiguration()
-            .get<NesSupportedEndpoint>(ConfigKeys.Nes.supportedEndpoint, 'chat/completions');
+        return this._cached<NesSupportedEndpoint>(ConfigKeys.Nes.supportedEndpoint, 'chat/completions');
     }
 
     get capabilities(): NesCapabilities {
-        return {
+        const key = 'nes.capabilities';
+        if (this._cache.has(key)) {
+            return this._cache.get(key) as NesCapabilities;
+        }
+        const value: NesCapabilities = {
             limits: {
                 max_output_tokens: this.maxOutputTokens,
                 max_context_window_tokens: vscode.workspace.getConfiguration()
@@ -98,43 +119,38 @@ export class VSCodeNesConfigProvider implements INesConfigProvider {
                     .get<boolean>(ConfigKeys.Nes.thinking, false),
                 reasoning_effort: vscode.workspace.getConfiguration()
                     .get<string[]>(ConfigKeys.Nes.reasoningEffort, []),
-            }
+            },
         };
+        this._cache.set(key, value);
+        return value;
     }
 
     get maxOutputTokens(): number {
-        return vscode.workspace.getConfiguration()
-            .get<number>(ConfigKeys.Nes.maxOutputTokens, 8192);
+        return this._cached<number>(ConfigKeys.Nes.maxOutputTokens, 8192);
     }
 
     get suffixOverlapThreshold(): number {
-        return vscode.workspace.getConfiguration()
-            .get<number>(ConfigKeys.Nes.suffixOverlapThreshold, 0.85);
+        return this._cached<number>(ConfigKeys.Nes.suffixOverlapThreshold, 0.85);
     }
 
     get suffixOverlapType(): 'low' | 'high' {
-        return vscode.workspace.getConfiguration()
-            .get<'low' | 'high'>(ConfigKeys.Nes.suffixOverlapType, 'high');
+        return this._cached<'low' | 'high'>(ConfigKeys.Nes.suffixOverlapType, 'high');
     }
 
     get presencePenalty(): number {
-        return vscode.workspace.getConfiguration()
-            .get<number>(ConfigKeys.Nes.presencePenalty, 1);
+        return this._cached<number>(ConfigKeys.Nes.presencePenalty, 1);
     }
 
     get frequencyPenalty(): number {
-        return vscode.workspace.getConfiguration()
-            .get<number>(ConfigKeys.Nes.frequencyPenalty, 0.2);
+        return this._cached<number>(ConfigKeys.Nes.frequencyPenalty, 0.2);
     }
 
     get stream(): boolean {
-        return vscode.workspace.getConfiguration()
-            .get<boolean>(ConfigKeys.Nes.stream, true);
+        return this._cached<boolean>(ConfigKeys.Nes.stream, true);
     }
 
     get mimicGhostTextBehavior(): boolean {
-        return vscode.workspace.getConfiguration()
-            .get<boolean>(ConfigKeys.Nes.mimicGhostTextBehavior, false);
+        return this._cached<boolean>(ConfigKeys.Nes.mimicGhostTextBehavior, false);
     }
 
     onDidChangeEnabled(listener: () => void): vscode.Disposable {
