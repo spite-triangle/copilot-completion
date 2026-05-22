@@ -58,4 +58,9 @@ suite('VSCodeNesConfigProvider', () => {
         provider.nextCursorPredictionEnabled = true;
         assert.strictEqual(provider.nextCursorPredictionEnabled, true);
     });
+
+    test('family defaults to standard', () => {
+        const provider = new VSCodeNesConfigProvider(mockContext());
+        assert.strictEqual(provider.family, 'standard');
+    });
 });
