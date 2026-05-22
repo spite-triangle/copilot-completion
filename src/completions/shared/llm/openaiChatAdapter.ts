@@ -1,6 +1,6 @@
 import { ILogService } from '../log/logService';
 import { ILLMAdapter } from './llmAdapter';
-import { LLMRequest, LLMResponse, LLMError, normalizeBody } from './llmRequest';
+import { LLMRequest, LLMResponse, LLMError, Capabilities, normalizeBody } from './llmRequest';
 import { readSSEStream } from './sseStream';
 
 export class OpenAIChatAdapter implements ILLMAdapter {
@@ -8,6 +8,7 @@ export class OpenAIChatAdapter implements ILLMAdapter {
         private readonly baseUrl: string,
         private readonly apiKey: string,
         private readonly model: string,
+        private readonly family: string = 'standard',
         private readonly _defaultPresencePenalty: number = 1,
         private readonly _defaultFrequencyPenalty: number = 0.2,
         private readonly _defaultStream: boolean = true,
@@ -15,7 +16,7 @@ export class OpenAIChatAdapter implements ILLMAdapter {
 
     async send(request: LLMRequest, signal?: AbortSignal): Promise<LLMResponse> {
         const url = `${this.baseUrl}/chat/completions`;
-        const body = JSON.stringify({
+        const bodyObj: Record<string, unknown> = {
             model: this.model,
             messages: request.messages || [],
             max_tokens: request.max_tokens,
@@ -23,8 +24,13 @@ export class OpenAIChatAdapter implements ILLMAdapter {
             presence_penalty: request.presence_penalty ?? this._defaultPresencePenalty,
             frequency_penalty: request.frequency_penalty ?? this._defaultFrequencyPenalty,
             stream: request.stream ?? this._defaultStream,
-            ...(request.stop ? { stop: request.stop } : {}),
-        });
+            stop: request.stop,
+            top_p: request.top_p,
+        };
+
+        applyThinkingParams(bodyObj, this.family, request.capabilities);
+
+        const body = JSON.stringify(bodyObj);
 
         const response = await fetch(url, {
             method: 'POST',
@@ -65,3 +71,38 @@ export class OpenAIChatAdapter implements ILLMAdapter {
         };
     }
 }
+
+function applyThinkingParams(
+    body: Record<string, unknown>,
+    family: string,
+    capabilities: Capabilities | undefined,
+): void {
+    if (!capabilities?.thinking && family !== 'deepseek' && family !== 'qwen') {
+        return;
+    }
+
+    const effort = (capabilities?.reasoning_effort as string) || 'medium';
+
+    switch (family) {
+        case 'openai-o':
+            body.reasoning_effort = effort;
+            delete body.temperature;
+            break;
+        case 'openai-gpt5':
+            body.reasoning = { effort };
+            break;
+        case 'deepseek':
+            body.enable_thinking = capabilities?.thinking === true;
+            break;
+        case 'qwen':
+            body.enable_thinking = capabilities?.thinking === true;
+            break;
+        case 'standard':
+            break;
+        default:
+            console.warn(`[OpenAIChatAdapter] Unknown thinking family: "${family}", falling back to standard`);
+            break;
+    }
+}
+
+export { applyThinkingParams };
