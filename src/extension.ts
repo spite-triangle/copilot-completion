@@ -91,7 +91,8 @@ export function activate(context: vscode.ExtensionContext) {
                 e.affectsConfiguration('cc-completion.ghost.apiKey') ||
                 e.affectsConfiguration('cc-completion.nes.baseUrl') ||
                 e.affectsConfiguration('cc-completion.nes.apiKey') ||
-                e.affectsConfiguration('cc-completion.nes.supportedEndpoint')) {
+                e.affectsConfiguration('cc-completion.nes.supportedEndpoint') ||
+                e.affectsConfiguration('cc-completion.nes.family')) {
                 registerLLMAdapters(instantiationService, ghostConfig, nesConfig, logService);
             }
         }),
@@ -129,7 +130,7 @@ function registerLLMAdapters(
     switch (endpoint) {
         case 'chat/completions':
             llmManager.register('chat/completions', new OpenAIChatAdapter(
-                baseUrl, apiKey, model,
+                baseUrl, apiKey, model, nesConfig.family,
                 nesConfig.presencePenalty,
                 nesConfig.frequencyPenalty,
                 nesConfig.stream,
