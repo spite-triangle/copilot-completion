@@ -118,6 +118,32 @@ export class GhostTextComputer {
             return undefined;
         }
 
+        // Step 4.5: Check async completions (in-flight request reuse)
+        const asyncHeaderRequestId = `ghost-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        if (this._asyncManager.shouldWaitForAsyncCompletions(prefix, suffix)) {
+            this._log.debug(`[GHOST] async_wait — checking in-flight requests`);
+            const asyncResult = await this._asyncManager.getFirstMatchingRequest(
+                asyncHeaderRequestId, prefix, suffix
+            );
+            if (asyncResult) {
+                const choice: CompletionChoice = {
+                    text: asyncResult.completionText,
+                    finishReason: asyncResult.finishReason,
+                };
+                const processed = this._postProcessChoiceInContext(choice, document, position);
+                const suffixCoverage = this._calcSuffixCoverage(processed.text, suffix);
+                this._log.info(`[GHOST] ASYNC_REUSE result=${processed.text.length}ch total=${Date.now() - t0}ms`);
+                const ghostCompletion = this._toGhostCompletion(processed, document, position, isMiddleOfTheLine);
+                this._currentGhostText.setGhostText(prefix, suffix, [ghostCompletion], ResultType.Async);
+                return {
+                    completions: [ghostCompletion],
+                    resultType: ResultType.Async,
+                    suffixCoverage,
+                };
+            }
+            this._log.debug(`[GHOST] async_wait — no matching request found`);
+        }
+
         // Step 5: Collect diagnostics
         const t3 = Date.now();
         const diagnostics = this._collectDiagnostics(document, position);
@@ -268,6 +294,16 @@ export class GhostTextComputer {
 
             // Store for typing-as-suggested on next keystroke
             this._currentGhostText.setGhostText(prefix, suffix, [ghostCompletion], ResultType.Network, response.finishReason);
+
+            // Register with AsyncCompletionsManager for future reuse
+            const abortControllerForAsync = new AbortController();
+            this._asyncManager.queueCompletionRequest(
+                `ghost-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+                prefix,
+                suffix,
+                { cancel: () => abortControllerForAsync.abort() },
+                Promise.resolve({ completionText: ghostCompletion.completionText, finishReason: response.finishReason }),
+            );
 
             // Step 14: Return
             return {
