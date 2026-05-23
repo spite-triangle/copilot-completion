@@ -187,9 +187,15 @@ export class GhostTextComputer {
         // Step 8: Network request with rate limiting + AbortController
         const t5 = Date.now();
         const abortController = new AbortController();
+        let cancelTimer: ReturnType<typeof setTimeout> | undefined;
         const cancelListener = token?.onCancellationRequested(() => {
-            this._log.info(`[GHOST] ABORT — CancellationToken triggered`);
-            abortController.abort();
+            this._log.info(`[GHOST] ABORT — CancellationToken triggered (1000ms delay)`);
+            if (cancelTimer) clearTimeout(cancelTimer);
+            cancelTimer = setTimeout(() => {
+                if (abortController.signal.aborted) return;
+                this._log.info(`[GHOST] ABORT — executing after 1000ms delay`);
+                abortController.abort();
+            }, 1000);
         });
 
         // Rate limiting: enforce minimum interval between requests
@@ -319,6 +325,7 @@ export class GhostTextComputer {
             this._log.error(`[GHOST] ERROR after ${Date.now() - t0}ms: ${err}`);
             return undefined;
         } finally {
+            if (cancelTimer) clearTimeout(cancelTimer);
             cancelListener?.dispose();
         }
     }

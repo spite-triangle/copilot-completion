@@ -104,9 +104,15 @@ export class NesWorkflow {
         const endpoint = this._config.supportedEndpoint;
         const adapter = this._llmManager.getAdapter(endpoint);
         const abortController = new AbortController();
+        let cancelTimer: ReturnType<typeof setTimeout> | undefined;
         const cancelListener = token?.onCancellationRequested(() => {
-            this._log.info(`[NES]  ABORT — CancellationToken triggered`);
-            abortController.abort();
+            this._log.info(`[NES]  ABORT — CancellationToken triggered (1000ms delay)`);
+            if (cancelTimer) clearTimeout(cancelTimer);
+            cancelTimer = setTimeout(() => {
+                if (abortController.signal.aborted) return;
+                this._log.info(`[NES]  ABORT — executing after 1000ms delay`);
+                abortController.abort();
+            }, 1000);
         });
 
         this._log.debug(`[NES]  endpoint=${endpoint} model=${this._config.model} max_tokens=${this._config.maxOutputTokens}`);
@@ -153,6 +159,7 @@ export class NesWorkflow {
                     if (parsedLines && parsedLines.length > 0 && !parsedLines.every(l => l.trim() === '')) {
                         const finalEdit = this._editFilterChain.apply(parsedLines, promptAssembly.editWindowLines);
                         if (finalEdit) {
+                            this._log.info('\n' + parsedLines.join('\n'));
                             const result = this._resultAssembler.assemble(
                                 parsedLines,
                                 document,
@@ -249,6 +256,7 @@ export class NesWorkflow {
             this._log.error(`[NES]  ERROR after ${Date.now() - t0}ms: ${err}`);
             return { editResult: undefined };
         } finally {
+            if (cancelTimer) clearTimeout(cancelTimer);
             cancelListener?.dispose();
         }
     }
