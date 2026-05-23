@@ -83,14 +83,30 @@ export class GhostTextComputer {
         this._log.debug(`[GHOST] prefix_tail="${this._trunc(prefix, 80)}"`);
         this._log.debug(`[GHOST] suffix_head="${this._trunc(suffix, 80)}"`);
 
+        // Step 3.5: Typing-as-suggested check (via CurrentGhostText singleton)
+        const typingSuggested = this._currentGhostText.getCompletionsForUserTyping(prefix, suffix);
+        if (typingSuggested && typingSuggested.length > 0) {
+            this._log.info(`[GHOST] TYPING_AS_SUGGESTED count=${typingSuggested.length} total=${Date.now() - t0}ms`);
+            return {
+                completions: typingSuggested.map(c => this._toGhostCompletion(
+                    { text: c.completionText, finishReason: 'stop' },
+                    document, position, isMiddleOfTheLine,
+                )),
+                resultType: ResultType.TypingAsSuggested,
+                suffixCoverage: this._calcSuffixCoverage(typingSuggested[0].completionText, suffix),
+            };
+        }
+
         // Step 4: Cache lookup
         const t2 = Date.now();
         const cached = this._cache.findAll(prefix, suffix);
         if (cached.length > 0) {
             const cacheResult = this._postProcessChoiceInContext(cached[0], document, position);
             this._log.info(`[GHOST] CACHE_HIT count=${cached.length} result="${this._trunc(cacheResult.text, 60)}" [${Date.now() - t2}ms] total=${Date.now() - t0}ms`);
+            const ghostCompletionCache = this._toGhostCompletion(cacheResult, document, position, isMiddleOfTheLine);
+            this._currentGhostText.setGhostText(prefix, suffix, [ghostCompletionCache], ResultType.Cache);
             return {
-                completions: [this._toGhostCompletion(cacheResult, document, position, isMiddleOfTheLine)],
+                completions: [ghostCompletionCache],
                 resultType: ResultType.Cache,
                 suffixCoverage: this._calcSuffixCoverage(cacheResult.text, suffix),
             };
@@ -247,8 +263,15 @@ export class GhostTextComputer {
             }];
             this._cache.append(prefix, suffix, choices[0]);
 
+            // Step 13.5: Build GhostCompletion
+            const ghostCompletion = this._toGhostCompletion(processed, document, position, isMiddleOfTheLine);
+
+            // Store for typing-as-suggested on next keystroke
+            this._currentGhostText.setGhostText(prefix, suffix, [ghostCompletion], ResultType.Network, response.finishReason);
+
+            // Step 14: Return
             return {
-                completions: [this._toGhostCompletion(processed, document, position, isMiddleOfTheLine)],
+                completions: [ghostCompletion],
                 resultType: ResultType.Network,
                 suffixCoverage,
             };
