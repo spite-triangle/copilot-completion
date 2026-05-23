@@ -127,7 +127,7 @@ export class GhostTextComputer {
         }
 
         // Step 7: Determine multiline strategy via detector chain
-        const afterAccept = this._currentGhostText.hasAcceptedCurrentCompletion();
+        const afterAccept = this._currentGhostText.hasAcceptedCurrentCompletion_original();
         const multilineCtx = new MultilineContextBuilder().build({
             document,
             position,
