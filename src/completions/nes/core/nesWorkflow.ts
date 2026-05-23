@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { INesConfigProvider } from '../../../config/nesConfig';
 import { ILLMAdapterManager } from '../../shared/llm/llmAdapter';
+import { LLMResponse } from '../../shared/llm/llmRequest';
 import { ILogService } from '../../shared/log/logService';
 import { CachedEdit, INextEditCache } from '../nextEditCache';
 import { NextEditResult } from '../types';
@@ -98,7 +99,7 @@ export class NesWorkflow {
             return { editResult: undefined };
         }
 
-        // Step 3: Network request
+        // Step 3: Network request (streaming)
         const t4 = Date.now();
         const endpoint = this._config.supportedEndpoint;
         const adapter = this._llmManager.getAdapter(endpoint);
@@ -111,7 +112,7 @@ export class NesWorkflow {
         this._log.debug(`[NES]  endpoint=${endpoint} model=${this._config.model} max_tokens=${this._config.maxOutputTokens}`);
 
         try {
-            const response = await adapter.send(
+            const stream = adapter.sendStream(
                 {
                     baseUrl: this._config.baseUrl,
                     apiKey: this._config.apiKey,
@@ -135,42 +136,93 @@ export class NesWorkflow {
                 },
                 abortController.signal,
             );
-            const networkMs = Date.now() - t4;
-            this._log.info(`[NES]  NETWORK finish=${response.finishReason} text=${response.text.length}ch usage=${JSON.stringify(response.usage)} [${networkMs}ms]`);
-            this._log.info('\n' + response.text);
 
-            // Step 4: Response pipeline — Phase 1 (boundary markers + cursor tag stripping)
+            let accumulated = '';
+            let firstEditResolved = false;
+            let firstResult: NextEditResult | undefined;
             const editWindowHadCursorTag = promptAssembly.editWindowLines.some(l => l.includes('<|cursor|>'));
             const pipelineContext: ResponsePipelineContext = { editWindowHadCursorTag };
-            const parsedLines = this._responsePipeline.process(response.text, pipelineContext);
 
+            for await (const delta of stream) {
+                if (abortController.signal.aborted) break;
+
+                accumulated += delta;
+
+                if (!firstEditResolved) {
+                    const parsedLines = this._responsePipeline.process(accumulated, pipelineContext);
+                    if (parsedLines && parsedLines.length > 0 && !parsedLines.every(l => l.trim() === '')) {
+                        const finalEdit = this._editFilterChain.apply(parsedLines, promptAssembly.editWindowLines);
+                        if (finalEdit) {
+                            const result = this._resultAssembler.assemble(
+                                parsedLines,
+                                document,
+                                position,
+                                undefined,
+                                this._config.suffixOverlapThreshold,
+                                this._config.suffixOverlapType,
+                                this._log
+                            );
+                            firstResult = result;
+                            firstEditResolved = true;
+
+                            const networkMs = Date.now() - t4;
+                            this._log.info(`[NES]  FIRST_EDIT network=${networkMs}ms edit=${result.edit.length}ch`);
+
+                            // Background: continue consuming stream to populate cache
+                            this._consumeRemainingStream(
+                                stream, accumulated,
+                                DocumentId.create(document.uri.toString()),
+                                position, promptAssembly,
+                                pipelineContext, abortController.signal
+                            ).catch(err => {
+                                if ((err as { name?: string })?.name !== 'AbortError') {
+                                    this._log.error(`[NES]  background_stream error: ${err}`);
+                                }
+                            });
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // If first edit was found during streaming, return it immediately
+            if (firstResult) {
+                const totalMs = Date.now() - t0;
+                this._log.info(`[NES]  RESULT (streaming) edit=${firstResult.edit.length}ch total=${totalMs}ms`);
+                this._log.info(`edit = '${firstResult.edit}', editfull = '${firstResult.fullEditText}'\n range = (start = ${firstResult.range.start}, end =${firstResult.range.end}), cursorAfterEdit = ${firstResult.cursorAfterEdit}\njump = ${firstResult.isFromCursorJump}, ${firstResult.jumpToPosition}`);
+                return { editResult: firstResult, promptPieces: promptAssembly.promptPieces };
+            }
+
+            // Fallback: stream completed without finding an edit
+            const networkMs = Date.now() - t4;
+            this._log.info(`[NES]  NETWORK finish (no first edit) [${networkMs}ms]`);
+            this._log.info('\n' + accumulated);
+
+            // Step 4: Response pipeline (on full accumulated text)
+            const parsedLines = this._responsePipeline.process(accumulated, pipelineContext);
             if (!parsedLines || parsedLines.length === 0 || parsedLines.every(l => l.trim() === '')) {
                 this._log.info(`[NES]  EMPTY_EDIT — pipeline returned no content total=${Date.now() - t0}ms`);
                 return { editResult: undefined, promptPieces: promptAssembly.promptPieces };
             }
 
-            // Step 5: Edit filtering — Phase 5
+            // Step 5: Edit filtering
             const finalEdit = this._editFilterChain.apply(parsedLines, promptAssembly.editWindowLines);
             if (!finalEdit) {
                 this._log.info(`[NES]  FILTERED — edit rejected by filter chain total=${Date.now() - t0}ms`);
                 return { editResult: undefined, promptPieces: promptAssembly.promptPieces };
             }
 
-            // Step 6: Build result — Phase 3-4-6 (diff → post-process → suffix overlap → result)
+            // Step 6: Build result
             const result = this._resultAssembler.assemble(
-                parsedLines,
-                document,
-                position,
-                undefined,
-                this._config.suffixOverlapThreshold,
-                this._config.suffixOverlapType,
-                this._log
+                parsedLines, document, position, undefined,
+                this._config.suffixOverlapThreshold, this._config.suffixOverlapType, this._log
             );
 
             // Step 7: Cache result
             const docText = document.getText();
+            const docId = DocumentId.create(document.uri.toString());
             const cacheEntry: CachedEdit = {
-                docId: DocumentId.create(document.uri.toString()),
+                docId,
                 documentBeforeEdit: docText,
                 editWindow: {
                     startLine: Math.max(0, position.line - 2),
@@ -179,15 +231,16 @@ export class NesWorkflow {
                 edit: finalEdit,
                 cacheTime: Date.now(),
             };
-            this._cache.setKthNextEdit(cacheEntry.docId, cacheEntry);
+            this._cache.setKthNextEdit(docId, cacheEntry);
 
             result.cacheEntry = cacheEntry;
 
             const totalMs = Date.now() - t0;
-            this._log.info(`[NES]  RESULT edit=${result.edit.length}ch total=${totalMs}ms`);
+            this._log.info(`[NES]  RESULT (fallback) edit=${result.edit.length}ch total=${totalMs}ms`);
             this._log.info(`edit = '${result.edit}', editfull = '${result.fullEditText}'\n range = (start = ${result.range.start}, end =${result.range.end}), cursorAfterEdit = ${result.cursorAfterEdit}\njump = ${result.isFromCursorJump}, ${result.jumpToPosition}`);
 
             return { editResult: result, promptPieces: promptAssembly.promptPieces };
+
         } catch (err) {
             if ((err as { name?: string })?.name === 'AbortError') {
                 this._log.info(`[NES]  ABORTED after ${Date.now() - t0}ms`);
@@ -197,6 +250,45 @@ export class NesWorkflow {
             return { editResult: undefined };
         } finally {
             cancelListener?.dispose();
+        }
+    }
+
+    private async _consumeRemainingStream(
+        stream: AsyncGenerator<string, LLMResponse>,
+        accumulated: string,
+        docId: DocumentId,
+        position: vscode.Position,
+        promptAssembly: { promptPieces: PromptPieces; editWindowLines: string[] },
+        pipelineContext: ResponsePipelineContext,
+        signal: AbortSignal,
+    ): Promise<void> {
+        try {
+            let text = accumulated;
+            for await (const delta of stream) {
+                if (signal.aborted) return;
+                text += delta;
+            }
+            // Cache results from the complete response in the background
+            const parsedLines = this._responsePipeline.process(text, pipelineContext);
+            if (parsedLines && parsedLines.length > 0 && !parsedLines.every(l => l.trim() === '')) {
+                const finalEdit = this._editFilterChain.apply(parsedLines, promptAssembly.editWindowLines);
+                if (finalEdit) {
+                    const cacheEntry: CachedEdit = {
+                        docId,
+                        documentBeforeEdit: '',
+                        editWindow: {
+                            startLine: Math.max(0, position.line - 2),
+                            endLineExclusive: position.line + 6,
+                        },
+                        edit: finalEdit,
+                        cacheTime: Date.now(),
+                    };
+                    this._cache.setKthNextEdit(docId, cacheEntry);
+                    this._log.debug(`[NES]  background_stream cached edit=${finalEdit.length}ch`);
+                }
+            }
+        } catch (err) {
+            throw err;
         }
     }
 
