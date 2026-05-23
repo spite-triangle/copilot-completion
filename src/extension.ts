@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { InstantiationServiceBuilder, SyncDescriptor } from './di/services';
+import { InstantiationServiceBuilder, SyncDescriptor, ICurrentGhostText, ILastGhostText } from './di/services';
 import { IInstantiationService } from './di/instantiation';
 
 // Config
@@ -19,6 +19,7 @@ import { IGhostPromptFactory, GhostPromptFactory } from './completions/ghost/pro
 import { IGhostCompletionsCache, GhostCompletionsCache } from './completions/ghost/completionsCache';
 import { IRecentEditsProvider, RecentEditsProvider } from './completions/ghost/recentEditsProvider';
 import { IGhostTextProvider, GhostTextProvider } from './completions/ghost/ghostTextProvider';
+import { CurrentGhostText, LastGhostText } from './completions/ghost/ghostTextState';
 import { IAsyncCompletionsManager, AsyncCompletionsManager } from './completions/ghost/asyncCompletions';
 import { IMultilineStrategy } from './completions/ghost/multiline/types';
 import { DefaultMultilineStrategy } from './completions/ghost/multiline/DefaultMultilineStrategy';
@@ -58,6 +59,8 @@ export function activate(context: vscode.ExtensionContext) {
     builder.define(IAsyncCompletionsManager, new SyncDescriptor(AsyncCompletionsManager));
     builder.define(IGhostTextProvider, new SyncDescriptor(GhostTextProvider));
     builder.define(IMultilineStrategy, new SyncDescriptor(DefaultMultilineStrategy));
+    builder.define(ICurrentGhostText, new SyncDescriptor(CurrentGhostText));
+    builder.define(ILastGhostText, new SyncDescriptor(LastGhostText));
 
     // === NES services ===
     builder.define(INextEditCache, new SyncDescriptor(NextEditCache));
