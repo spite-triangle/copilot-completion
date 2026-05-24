@@ -207,11 +207,6 @@
           "minimum": -2,
           "maximum": 2,
           "description": "Frequency penalty for NES (-2.0 to 2.0). Positive values penalize new tokens based on their existing frequency."
-        },
-        "cc-completion.nes.stream": {
-          "type": "boolean",
-          "default": true,
-          "description": "Enable SSE streaming for NES"
         }
       }
     }
