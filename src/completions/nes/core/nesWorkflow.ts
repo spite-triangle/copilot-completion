@@ -259,7 +259,7 @@ export class NesWorkflow {
                             this._consumeRemainingStream(
                                 stream, accumulated,
                                 DocumentId.create(document.uri.toString()),
-                                position, promptAssembly,
+                                docText, position, promptAssembly,
                                 pipelineContext, abortController.signal
                             ).catch(err => {
                                 if ((err as { name?: string })?.name !== 'AbortError') {
@@ -308,14 +308,13 @@ export class NesWorkflow {
             );
 
             // Step 7: Cache result
-            const docText = document.getText();
             const docId = DocumentId.create(document.uri.toString());
             const cacheEntry: CachedEdit = {
                 docId,
                 documentBeforeEdit: docText,
                 editWindow: {
-                    startLine: Math.max(0, position.line - 2),
-                    endLineExclusive: position.line + 6,
+                    startLine: promptAssembly.editWindowRange.start,
+                    endLineExclusive: promptAssembly.editWindowRange.endExclusive,
                 },
                 edit: finalEdit,
                 cacheTime: Date.now(),
@@ -354,8 +353,9 @@ export class NesWorkflow {
         stream: AsyncGenerator<string, LLMResponse>,
         accumulated: string,
         docId: DocumentId,
+        documentText: string,
         position: vscode.Position,
-        promptAssembly: { promptPieces: PromptPieces; editWindowLines: string[] },
+        promptAssembly: { promptPieces: PromptPieces; editWindowLines: string[]; editWindowRange: { start: number; endExclusive: number } },
         pipelineContext: ResponsePipelineContext,
         signal: AbortSignal,
     ): Promise<void> {
@@ -371,10 +371,10 @@ export class NesWorkflow {
             if (finalEdit) {
                 const cacheEntry: CachedEdit = {
                     docId,
-                    documentBeforeEdit: '',
+                    documentBeforeEdit: documentText,
                     editWindow: {
-                        startLine: Math.max(0, position.line - 2),
-                        endLineExclusive: position.line + 6,
+                        startLine: promptAssembly.editWindowRange.start,
+                        endLineExclusive: promptAssembly.editWindowRange.endExclusive,
                     },
                     edit: finalEdit,
                     cacheTime: Date.now(),
