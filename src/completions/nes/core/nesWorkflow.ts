@@ -171,8 +171,8 @@ export class NesWorkflow {
             liveDependants: 1,
             deferred,
         };
-        // Cancel any previous pending (stale), register new one
-        if (this._pendingRequest && this._pendingRequest.liveDependants <= 0) {
+        // Cancel previous pending request immediately (aligns with reference: only one in-flight)
+        if (this._pendingRequest) {
             this._pendingRequest.abortController.abort();
         }
         this._pendingRequest = pendingRequest;
