@@ -15,6 +15,9 @@ import { EditFilterChain } from '../response/editFilterChain';
 import { NesHistoryTracker } from './nesHistoryTracker';
 import { Deferred } from '../../../common/async';
 
+// Module-level rate limiting (matches original fetch.ts design)
+let lastRequestTime = 0;
+let lastTimeoutId: ReturnType<typeof setTimeout> | null = null;
 
 export interface NesExecutionResult {
     editResult: NextEditResult | undefined;
@@ -191,9 +194,33 @@ export class NesWorkflow {
             }, 1000);
         });
 
+        // Rate limiting: enforce minimum interval between requests
+        const delayMs = 100;
+        const waitTime = Math.max(0, delayMs - (Date.now() - lastRequestTime));
+        if (waitTime > 0) {
+            this._log.debug(`[NES] rate_limiting delay=${waitTime}ms`);
+            await new Promise<void>((resolve, reject) => {
+                const tid = setTimeout(() => {
+                    if (abortController.signal.aborted) {
+                        const err = new Error('Aborted');
+                        err.name = 'AbortError';
+                        reject(err);
+                        return;
+                    }
+                    lastRequestTime = Date.now();
+                    resolve();
+                }, waitTime);
+                if (lastTimeoutId) clearTimeout(lastTimeoutId);
+                lastTimeoutId = tid;
+            });
+        } else {
+            lastRequestTime = Date.now();
+        }
+
         this._log.debug(`[NES]  endpoint=${endpoint} model=${this._config.model} max_tokens=${this._config.maxOutputTokens}`);
 
         try {
+            this._log.info(`[NES]  REQUEST sent [${Date.now() - t4}ms] requestId=${headerRequestId} endpoint=${endpoint} model=${this._config.model} max_tokens=${this._config.maxOutputTokens}`);
             const stream = adapter.sendStream(
                 {
                     baseUrl: this._config.baseUrl,
