@@ -50,3 +50,16 @@ export class GlobalIdleValue<T> implements IDisposable {
 		return this._didRun;
 	}
 }
+
+/**
+ * Deferred promise implementation to enable delayed promise resolution.
+ */
+export class Deferred<T> {
+    resolve: (value: T | PromiseLike<T>) => void = () => {};
+    reject: (reason?: unknown) => void = () => {};
+
+    readonly promise: Promise<T> = new Promise((resolve, reject) => {
+        this.resolve = resolve;
+        this.reject = reject;
+    });
+}
