@@ -182,6 +182,10 @@ export class NesWorkflow {
             if (cancelTimer) clearTimeout(cancelTimer);
             cancelTimer = setTimeout(() => {
                 if (abortController.signal.aborted) return;
+                if (pendingRequest.liveDependants > 1) {
+                    this._log.info(`[NES]  ABORT — skipped (${pendingRequest.liveDependants} dependants)`);
+                    return;
+                }
                 this._log.info(`[NES]  ABORT — executing after 1000ms delay`);
                 abortController.abort();
             }, 1000);

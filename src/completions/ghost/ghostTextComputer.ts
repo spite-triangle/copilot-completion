@@ -121,7 +121,7 @@ export class GhostTextComputer {
         // Step 4.5: Check async completions (in-flight request reuse)
         const asyncHeaderRequestId = `ghost-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
         if (this._asyncManager.shouldWaitForAsyncCompletions(prefix, suffix)) {
-            this._log.debug(`[GHOST] async_wait — checking in-flight requests`);
+            this._log.info(`[GHOST] async_wait — checking in-flight requests`);
             const asyncResult = await this._asyncManager.getFirstMatchingRequest(
                 asyncHeaderRequestId, prefix, suffix
             );
@@ -141,7 +141,7 @@ export class GhostTextComputer {
                     suffixCoverage,
                 };
             }
-            this._log.debug(`[GHOST] async_wait — no matching request found`);
+            this._log.info(`[GHOST] async_wait — no matching request found`);
         }
 
         // Step 5: Collect diagnostics
@@ -193,6 +193,10 @@ export class GhostTextComputer {
             if (cancelTimer) clearTimeout(cancelTimer);
             cancelTimer = setTimeout(() => {
                 if (abortController.signal.aborted) return;
+                if (this._asyncManager.hasActiveWaiters()) {
+                    this._log.info(`[GHOST] ABORT — skipped, active waiters present`);
+                    return;
+                }
                 this._log.info(`[GHOST] ABORT — executing after 1000ms delay`);
                 abortController.abort();
             }, 1000);

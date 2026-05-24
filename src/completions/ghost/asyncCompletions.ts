@@ -21,6 +21,7 @@ export interface IAsyncCompletionsManager {
         prefix: string,
         suffix: string,
     ): Promise<AsyncCompletionResult | undefined>;
+    hasActiveWaiters(): boolean;
     cancelStaleRequests(headerRequestId: string): void;
     clear(): void;
 }
@@ -62,6 +63,13 @@ export class AsyncCompletionsManager implements IAsyncCompletionsManager {
 
     /** Lock: only the most recent requester can cancel stale requests. */
     private _mostRecentRequestId = '';
+
+    /** Count of active waiters in getFirstMatchingRequest — prevents abort while subscribers exist. */
+    private _activeWaiterCount = 0;
+
+    hasActiveWaiters(): boolean {
+        return this._activeWaiterCount > 0;
+    }
 
     shouldWaitForAsyncCompletions(prefix: string, suffix: string): boolean {
         for (const [, request] of this._requests) {
@@ -124,6 +132,7 @@ export class AsyncCompletionsManager implements IAsyncCompletionsManager {
         suffix: string,
     ): Promise<AsyncCompletionResult | undefined> {
         this._mostRecentRequestId = headerRequestId;
+        this._activeWaiterCount++;
         let resolved = false;
         const deferred = new Deferred<AsyncCompletionResult | undefined>();
         const subscriptions = new Map<string, () => void>();
@@ -177,6 +186,7 @@ export class AsyncCompletionsManager implements IAsyncCompletionsManager {
         }
 
         return deferred.promise.finally(() => {
+            this._activeWaiterCount--;
             for (const dispose of subscriptions.values()) {
                 dispose();
             }
