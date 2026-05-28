@@ -237,6 +237,7 @@ export class GhostTextComputer {
                     apiKey: this._config.apiKey,
                     model: this._config.model,
                     prompt,
+                    suffix: suffix || undefined,
                     max_tokens: effectiveTokens,
                     temperature: 0,
                     stop: (requestMultiline ? ['\n\n',"\n```"] : ['\n']).concat(this._config.stops),

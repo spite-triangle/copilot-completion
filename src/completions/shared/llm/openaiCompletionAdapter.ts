@@ -21,6 +21,7 @@ export class OpenAICompletionAdapter implements ILLMAdapter {
         const body = JSON.stringify({
             model: request.model,
             prompt: request.prompt || '',
+            suffix: request.suffix || null,
             max_tokens: request.max_tokens,
             temperature: request.temperature,
             top_p: request.top_p,
@@ -54,6 +55,7 @@ export class OpenAICompletionAdapter implements ILLMAdapter {
             await readSSEStream(response, signal, json => {
                 const choice = json.choices?.[0];
                 if (choice?.text) text += choice.text;
+                else if (choice?.delta?.content) text += choice.delta.content;
                 if (choice?.finish_reason) finishReason = choice.finish_reason;
             });
             this.logService.debug(`[OpenAI] Streaming response complete | textLength=${text.length}`);
@@ -67,9 +69,10 @@ export class OpenAICompletionAdapter implements ILLMAdapter {
     private _parseJSON(raw: string): LLMResponse {
         const json = JSON.parse(raw) as Record<string, unknown>;
         const choices = json.choices as Array<Record<string, unknown>>;
+        const choice = choices[0] as Record<string, unknown>;
         return {
-            text: choices[0]?.text as string || '',
-            finishReason: choices[0]?.finish_reason as string || 'stop',
+            text: (choice?.text as string) || (choice?.message as Record<string, unknown>)?.content as string || '',
+            finishReason: choice?.finish_reason as string || 'stop',
         };
     }
 }

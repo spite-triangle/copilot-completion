@@ -29,6 +29,7 @@ export interface LLMRequest {
     presence_penalty?: number;
     frequency_penalty?: number;
     stream?: boolean;
+    suffix?: string;
 }
 
 export interface TokenUsage {
