@@ -143,8 +143,10 @@ export class GhostTextComputer {
                 asyncHeaderRequestId, prefix, suffix
             );
             if (asyncResult) {
+                // Apply line-level suffix overlap trim BEFORE postProcess (consistent with Network path)
+                const trimmedAsyncText = this._trimLineSuffixOverlap(asyncResult.completionText, suffix);
                 const choice: CompletionChoice = {
-                    text: asyncResult.completionText,
+                    text: trimmedAsyncText,
                     finishReason: asyncResult.finishReason,
                 };
                 const processed = this._postProcessChoiceInContext(choice, document, position);
