@@ -112,7 +112,13 @@ export class GhostTextComputer {
         const t2 = Date.now();
         const cached = this._cache.findAll(prefix, suffix);
         if (cached.length > 0) {
-            const cacheResult = this._postProcessChoiceInContext(cached[0], document, position);
+            // Apply line-level suffix overlap trim BEFORE postProcess (consistent with Network path)
+            const trimmedCacheText = this._trimLineSuffixOverlap(cached[0].text, suffix);
+            const cacheResult = this._postProcessChoiceInContext(
+                { text: trimmedCacheText, finishReason: cached[0].finishReason },
+                document,
+                position,
+            );
             this._log.info(`[GHOST] CACHE_HIT count=${cached.length} result="${this._trunc(cacheResult.text, 60)}" [${Date.now() - t2}ms] total=${Date.now() - t0}ms`);
             const ghostCompletionCache = this._toGhostCompletion(cacheResult, document, position, isMiddleOfTheLine);
             this._currentGhostText.setGhostText(prefix, suffix, [ghostCompletionCache], ResultType.Cache);
