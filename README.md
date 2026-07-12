@@ -1,7 +1,5 @@
 # Copilot Completion
 
-> [github copilot chat](https://github.com/microsoft/vscode-copilot-chat)
-
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 Code completion VS Code extension powered by LLMs — supporting both **GHOST** (Fill-in-the-Middle) inline completions and **NES** (Next Edit Suggestion) predictive edits.
@@ -36,8 +34,9 @@ Code completion VS Code extension powered by LLMs — supporting both **GHOST** 
 | `OpenAICompletionAdapter` | `/completions` | Native FIM (GHOST) |
 
 > [!tip]
-> - `Qwen2.5 coder` is good for `GHOST`, which can run in local and provide better suggestion.
-> - `Qwen3.5 9B MIT` performs well for `GHOST` and `NES` individually. **however, running this LLM locally and using it for both GHOST and NES simultaneously will lead to slow inference when your computer lacks sufficient performance. The beast way is that `GHOST` and `NES` use different LLM.** 
+> - `Qwen2.5 coder` is good performance for `GHOST`, which can run in local and provide better suggestion.
+> - `Qwen3.5 9B MIT` performs well for `GHOST` and `NES` individually. 
+> - `Qwen3.6 35B A3B` and `Qwen3.6 27B` are good for `NES`.
 
 ## Configuration
 
@@ -127,6 +126,10 @@ src/
 ├── test/               # Test suites
 └── ui/                 # Status bar panel
 ```
+
+## References
+
+-  [github copilot chat](https://github.com/microsoft/vscode-copilot-chat)
 
 ## License
 

@@ -67,7 +67,7 @@ export class VSCodeNesConfigProvider implements INesConfigProvider {
     }
 
     get enabled(): boolean {
-        return this._context.workspaceState.get<boolean>(this._enabledKey, false);
+        return this._context.workspaceState.get<boolean>(this._enabledKey, true);
     }
 
     set enabled(value: boolean) {

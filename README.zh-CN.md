@@ -1,6 +1,6 @@
 # Copilot Completion
 
-> [github copilot chat](https://github.com/microsoft/vscode-copilot-chat)
+
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
@@ -36,8 +36,9 @@
 
 
 > [!tip]
-> - `GHOST` 可使用 `Qwen2.5 coder`，可本地部署且质量不错
+> - `GHOST` 可使用 `Qwen2.5 coder`，具有较好的性能且资源占用较低
 > - `Qwen3.5 9B MIT` 对于 `GHOST` 与 `NES` 都不错
+> - `Qwen3.6 35B A3B` 与 `Qwen3.6 27B` 对于 `NES` 效果较好，但本地运行资源占用较大
 
 ## 配置项
 
@@ -127,6 +128,10 @@ src/
 ├── test/               # 测试套件
 └── ui/                 # 状态栏面板
 ```
+
+## 参考
+
+- [github copilot chat](https://github.com/microsoft/vscode-copilot-chat)
 
 ## 许可证
 

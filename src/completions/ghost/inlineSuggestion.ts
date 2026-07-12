@@ -19,11 +19,21 @@ function isMiddleOfTheLineFromTextAfterCursor(textAfterCursor: string): boolean 
  *   closing brackets: ) > ] }
  *   quotes: " ' `
  *   line-end punctuation: : { ; ,
+ *   HTML/XML tag end: </tag> -->
+ *   Markdown formatting: ** ~~ $
  *   and surrounding whitespace
  */
 function isValidMiddleOfTheLineFromTextAfterCursor(textAfterCursor: string): boolean {
     const endOfLine = textAfterCursor.trim();
-    return /^\s*[)>}\]"'`]*\s*[:{;,]?\s*$/.test(endOfLine);
+    const isBrackets = /^\s*[)>}\]"'`]*$/;
+    const isLineEnd = /^\s*[:{;,]?\s*$/;
+    const isTagEnd = /^\s*(<\/.*?>|-->)\s*$/;
+    const isMarkddown = /^\s*(\*\*|~~|\$)\s*$/;
+
+    return isBrackets.test(endOfLine) || 
+            isLineEnd.test(endOfLine) || 
+            isTagEnd.test(endOfLine) || 
+            isMarkddown.test(endOfLine);
 }
 
 /**

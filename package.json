@@ -2,7 +2,7 @@
   "name": "copilot-completions",
   "displayName": "Copilot Completions",
   "description": "Code completion powered by LLM — GHOST (FIM) and NES (Next Edit Suggestion)",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "engines": {
     "vscode": "^1.110.0"
   },
