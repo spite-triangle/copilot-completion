@@ -25,15 +25,13 @@ function isMiddleOfTheLineFromTextAfterCursor(textAfterCursor: string): boolean 
  */
 function isValidMiddleOfTheLineFromTextAfterCursor(textAfterCursor: string): boolean {
     const endOfLine = textAfterCursor.trim();
-    const isBrackets = /^\s*[)>}\]"'`]*$/;
-    const isLineEnd = /^\s*[:{;,]?\s*$/;
+    const isLineEnd = /^\s*[)>}\]"'`]*\s*[:{;,]?\s*$/;
     const isTagEnd = /^\s*(<\/.*?>|-->)\s*$/;
-    const isMarkddown = /^\s*(\*\*|~~|\$)\s*$/;
+    const isMarkdown = /^\s*(\*\*|~~|\$)\s*[:;,]?\s*$/;
 
-    return isBrackets.test(endOfLine) || 
-            isLineEnd.test(endOfLine) || 
+    return isLineEnd.test(endOfLine) || 
             isTagEnd.test(endOfLine) || 
-            isMarkddown.test(endOfLine);
+            isMarkdown.test(endOfLine);
 }
 
 /**
