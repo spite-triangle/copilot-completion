@@ -26,13 +26,12 @@ export function getEditDiffHistory(
     { onlyForDocsInPrompt, maxTokens, nEntries, useRelativePaths }: DiffHistoryOptions,
 ): EditDiffHistoryResult {
     const workspacePath = useRelativePaths ? activeDoc.workspaceRoot?.path : undefined;
-    const reversedHistory = xtabHistory.slice().reverse();
 
     let tokenBudget = maxTokens;
     let totalTokensConsumed = 0;
     const allDiffs: string[] = [];
 
-    for (const entry of reversedHistory) {
+    for (const entry of xtabHistory) {
         if (allDiffs.length >= nEntries) {
             break;
         }
@@ -60,7 +59,7 @@ export function getEditDiffHistory(
     }
 
     const totalDiffs = allDiffs.length;
-    const numberedDiffs = allDiffs.map(
+    const numberedDiffs = allDiffs.reverse().map(
         (diff, i) => `# Edit ${i + 1}/${totalDiffs}\n${diff}`,
     );
     let promptPiece = numberedDiffs.join('\n\n');
