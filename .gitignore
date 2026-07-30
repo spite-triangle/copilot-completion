@@ -5,5 +5,9 @@ node_modules
 *.vsix
 .traces/
 .claude/
-.superpowers
+.superpowers/
+.codegraph/
+.claude/
+docs/copilot
 docs/superpowers/
+.mcp.json
