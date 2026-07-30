@@ -59,9 +59,13 @@ export function getEditDiffHistory(
         allDiffs.push(docDiff);
     }
 
-    const diffsFromOldestToNewest = allDiffs.reverse();
-    let promptPiece = diffsFromOldestToNewest.join('\n\n');
-    if (diffsFromOldestToNewest.length > 0) {
+    const totalDiffs = allDiffs.length;
+    const numberedDiffs = allDiffs.map(
+        (diff, i) => `# Edit ${i + 1}/${totalDiffs}\n${diff}`,
+    );
+    let promptPiece = numberedDiffs.join('\n\n');
+    if (numberedDiffs.length > 0) {
+        promptPiece = '# From Oldest To Newest\n' + promptPiece;
         promptPiece += '\n';
     }
 
@@ -148,7 +152,7 @@ function stringEditToLineReplacements(base: StringText, edit: StringEdit): LineR
             ? startPos
             : transformer.getPosition(Math.max(repl.range.start, repl.range.endExclusive - 1));
 
-        const newLines = repl.newText.split(/\r?\n/);
+        let newLines = repl.newText.split(/\r?\n/);
 
         // Determine 1-based line range
         let startLineNumber: number;
@@ -161,6 +165,26 @@ function stringEditToLineReplacements(base: StringText, edit: StringEdit): LineR
         } else {
             startLineNumber = startPos.lineNumber;
             endLineNumberExclusive = endPos.lineNumber + 1;
+        }
+
+        // Expand single-line partial edits to full-line context so the diff
+        // shows the complete old/new line rather than just the changed fragment.
+        if (newLines.length === 1) {
+            const baseLines = base.getLines();
+            const lineIdx = startPos.lineNumber - 1;
+            const originalLine = baseLines[lineIdx] ?? '';
+            const lineStartOff = transformer.getOffset(new Position(startPos.lineNumber, 1));
+            const lineEndOff = lineStartOff + originalLine.length;
+
+            // Only expand when the replacement doesn't already cover the entire line
+            if (repl.range.start > lineStartOff || repl.range.endExclusive < lineEndOff) {
+                const col = repl.range.start - lineStartOff;
+                const removeLen = rangeIsEmpty ? 0 : repl.range.length;
+                const newFullLine =
+                    originalLine.slice(0, col) + repl.newText + originalLine.slice(col + removeLen);
+                newLines = [newFullLine];
+                endLineNumberExclusive = startLineNumber + 1;
+            }
         }
 
         // Merge with previous replacement if line ranges overlap or touch
