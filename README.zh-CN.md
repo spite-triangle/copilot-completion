@@ -1,12 +1,13 @@
 # Copilot Completion
 
-
-
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 基于 LLM 的 VS Code 代码补全插件 — 同时支持 **GHOST**（中间填充）内联补全和 **NES**（下一步编辑建议）预测性编辑。
 
 [English](README.md)
+
+> [!note]
+> 由于 vscode api 变动，NES 可能在 `1.125 ~ 1.131` 间的 vscode 版本无法正常工作。且 api 在最新版仓库仍然有变动，因此将在 `1.132` 之后的版本适配。
 
 ## 功能特性
 

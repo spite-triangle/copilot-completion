@@ -12,3 +12,9 @@ vsc-extension-quickstart.md
 **/*.map
 **/*.ts
 **/.vscode-test.*
+docs/
+docs/
+.claude
+.codegraph/
+.superpowers/
+.traces/

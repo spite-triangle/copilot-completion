@@ -9,5 +9,4 @@ node_modules
 .codegraph/
 .claude/
 docs/copilot
-docs/superpowers/
 .mcp.json

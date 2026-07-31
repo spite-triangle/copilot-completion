@@ -104,19 +104,13 @@ export class GhostTextProvider implements IGhostTextProvider, vscode.InlineCompl
 
         const currentLine = document.lineAt(position.line);
         const currentLinePrefix = currentLine.text.substring(0, position.character);
-        const textAfterCursor = currentLine.text.substring(position.character);
 
         const items = result.completions.map(c => {
             const text = trimIndentOverlap(c.completionText, currentLinePrefix);
             const range = c.isMiddleOfTheLine
                 ? new vscode.Range(position, document.lineAt(position.line).range.end)
                 : new vscode.Range(position, position);
-            // When isMiddleOfTheLine is true, the range covers textAfterCursor (e.g. ")"),
-            // but the completion text doesn't include it (since the model saw it in the suffix).
-            // VS Code's filter requires "text to replace" to be a prefix of filterText,
-            // so we must append textAfterCursor to insertText for the completion to be shown.
-            const insertText = c.isMiddleOfTheLine ? text + textAfterCursor : text;
-            return new vscode.InlineCompletionItem(insertText, range);
+            return new vscode.InlineCompletionItem(text, range);
         });
 
         return items;

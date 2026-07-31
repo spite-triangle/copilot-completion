@@ -6,6 +6,9 @@ Code completion VS Code extension powered by LLMs — supporting both **GHOST** 
 
 [中文文档](README.zh-CN.md)
 
+> [!note]
+> Due to changes in the VS Code API, NES may not function correctly in VS Code versions `1.125 ~ 1.131`. Moreover, as the API continues to evolve in the latest repository, adaptation will be provided for versions after `1.132`.
+
 ## Features
 
 ### GHOST — Fill-in-the-Middle (FIM) Inline Completion

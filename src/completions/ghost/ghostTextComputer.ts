@@ -72,13 +72,19 @@ export class GhostTextComputer {
         const isMiddleOfTheLine = !!inlineSuggestion;
 
         // Step 3: Extract prefix/suffix
-        // suffix 从光标 offset 开始截取，去除光标所在行残余文本及 \n，保留后续行
+        // suffix 从光标所在行的下一行开始（光标所在行光标后的残余文本不进入 suffix），
+        // 与 FIM 范式一致：prefix=光标前所有文本，suffix=光标行之后的所有行。
+        // 注意：不使用 substring(offset)+正则删除首行，因为单行无换行文档上正则不匹配，
+        // 会导致光标所在行残余文本错误地进入 suffix。
         const t1 = Date.now();
         const prefix = document.getText(new vscode.Range(new vscode.Position(0, 0), position));
-        const offset = document.offsetAt(position);
-        const suffix = document.getText().substring(offset)
-            .replace(/\r/g, '')
-            .replace(/^.*?\n/, '');
+        const suffixStartLine = position.line + 1;
+        const suffix = suffixStartLine < document.lineCount
+            ? document.getText(new vscode.Range(
+                new vscode.Position(suffixStartLine, 0),
+                document.lineAt(document.lineCount - 1).range.end,
+            )).replace(/\r\n/g, '\n')
+            : '';
         this._log.debug(`[GHOST] prefix=${prefix.length}ch suffix=${suffix.length}ch [${Date.now() - t1}ms]`);
         this._log.debug(`[GHOST] prefix_tail="${this._trunc(prefix, 80)}"`);
         this._log.debug(`[GHOST] suffix_head="${this._trunc(suffix, 80)}"`);

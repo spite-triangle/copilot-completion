@@ -14,10 +14,13 @@ export class SuffixPresenceDetector implements IMultilineDetector {
         if (ctx.isMiddleOfTheLine) {
             return { decision: 'defer' };
         }
+        const currentLine = ctx.document.lineAt(ctx.position);
+
         // At end of line with non-empty suffix → multiline
-        if (ctx.suffix.trim() !== '') {
+        if (ctx.suffix !== '' || currentLine.text.trim() == '') {
             return { decision: 'multiline' };
         }
+
         // Empty suffix (EOF) → defer to default (singleline)
         return { decision: 'defer' };
     }
