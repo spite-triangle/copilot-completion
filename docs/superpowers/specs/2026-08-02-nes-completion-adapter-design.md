@@ -97,6 +97,8 @@ async *sendStream(request: LLMRequest, signal?: AbortSignal): AsyncGenerator<str
 
 **关键差异**：`/completions` 端点的 SSE 事件格式为 `choices[0].text`（**累积**文本），而 `/chat/completions` 端点为 `choices[0].delta.content`（**增量**文本）。因此需要在流式循环中手动计算 delta。
 
+**SSE 解析循环重复说明**：`sendStream()` 是 async generator（需要 `yield` 语义），而 `sseStream.ts` 的 `readSSEStream()` 是回调模式。在 async generator 内无法从回调中 yield，因此 `sendStream()` 内联了自己的 SSE 循环（与 `readSSEStream` 和 `OpenAIChatCompletionAdapter.sendStream()` 结构相同）。这是为了适应 yield 语义的有意取舍。
+
 ### 4.3 改造后代码
 
 ```typescript
@@ -113,7 +115,7 @@ async *sendStream(request: LLMRequest, signal?: AbortSignal): AsyncGenerator<str
         n: request.n,
         presence_penalty: request.presence_penalty,
         frequency_penalty: request.frequency_penalty,
-        stream: true,   // 强制流式
+        stream: true,   // sendStream() 始终强制流式，忽略 request.stream 的值
         stop: request.stop,
     });
 
@@ -201,8 +203,10 @@ async *sendStream(request: LLMRequest, signal?: AbortSignal): AsyncGenerator<str
 ```typescript
 /**
  * 将 system + user 消息通过模板渲染为纯文本 prompt。
- * 注意：这是简单的字符串替换。若 system/user 内容中意外包含
- * 字面量 "{system}" / "{user}"，会被错误替换。这是尽力而为的简单替换。
+ *
+ * 注意：这是简单的字符串替换。若 system 内容中包含字面量 "{user}"，
+ * 或 user 内容中包含字面量 "{system}"，都会被错误替换。
+ * 这是尽力而为的简单替换，适用于正常的 ChatML 模板场景。
  */
 export function renderCompletionPrompt(
     template: string,
@@ -242,8 +246,7 @@ if (endpoint === 'completions') {
         stream: this._config.stream,
         presence_penalty: this._config.presencePenalty,
         frequency_penalty: this._config.frequencyPenalty,
-        stop: undefined,
-        // 无 messages, 无 capabilities（thinking/reasoning_effort 仅 chat 有）
+        stop: ['<|im_end|>'],  // ChatML 格式：模型完成生成后输出 <|im_end|> 作为自然停止
     }, abortController.signal);
 } else {
     // 现有 chat/responses/messages 逻辑不变
@@ -312,8 +315,9 @@ if (endpoint === 'completions') {
 | `top_p` | ✅ (1) | ✅ (1) | ❌ | ❌ |
 | `presence_penalty` | ✅ | ✅ | ✅ | ✅ |
 | `frequency_penalty` | ✅ | ✅ | ✅ | ✅ |
+| `stop` | ❌ | ✅ (`['<|im_end|>']`) | ❌ | ❌ |
 
-> `NextCursorPredictor` 使用 `adapter.send()`（非流式），因此不传 `stream`、`top_p`。`capabilities` 仅在 chat 模式下与 messages 搭配使用，completions 模式下不含此字段。
+> `NextCursorPredictor` 使用 `adapter.send()`（非流式），因此不传 `stream`、`top_p`、`stop`。`capabilities` 仅在 chat 模式下搭配 messages 使用。`stop: ['<|im_end|>']` 仅 `NesWorkflow` completions 分支使用，匹配 ChatML 模板的 `<|im_end|>` 结束标记。
 
 ---
 
