@@ -2,7 +2,7 @@
   "name": "copilot-completions",
   "displayName": "Copilot Completions",
   "description": "Code completion powered by LLM — GHOST (FIM) and NES (Next Edit Suggestion)",
-  "version": "1.0.9",
+  "version": "1.1.0",
   "engines": {
     "vscode": "^1.110.0"
   },
@@ -139,7 +139,8 @@
         "cc-completion.nes.supportedEndpoint": {
           "type": "string",
           "enum": [
-            "chat/completions"
+            "chat/completions",
+            "completions"
           ],
           "default": "chat/completions",
           "description": "LLM API endpoint for NES"

@@ -1,4 +1,4 @@
-import { ILLMAdapter } from './llmAdapter';
+import { applyThinkingParams, ILLMAdapter } from './llmAdapter';
 import { LLMRequest, LLMResponse, LLMError, normalizeBody } from './llmRequest';
 import { readSSEStream, splitChunk, SSEChunk } from './sseStream';
 import { ILogService } from '../log/logService';
@@ -14,7 +14,8 @@ export class OpenAICompletionAdapter implements ILLMAdapter {
         this.logService.debug(`[OpenAI] Streaming request | model=${request.model} | maxTokens=${request.max_tokens}`);
 
         const url = `${request.baseUrl}/completions`;
-        const body = JSON.stringify({
+
+        const bodyObj: Record<string, unknown> = {
             model: request.model,
             prompt: request.prompt || '',
             max_tokens: request.max_tokens,
@@ -25,7 +26,11 @@ export class OpenAICompletionAdapter implements ILLMAdapter {
             frequency_penalty: request.frequency_penalty,
             stream: true,   // sendStream() 始终强制流式，忽略 request.stream 的值
             stop: request.stop,
-        });
+        };
+
+        applyThinkingParams(bodyObj, request.capabilities, request.family);
+
+        const body = JSON.stringify(bodyObj);
 
         const response = await fetch(url, {
             method: 'POST', signal,
@@ -50,8 +55,8 @@ export class OpenAICompletionAdapter implements ILLMAdapter {
             return jsonResponse;
         }
 
-        // 真 SSE 流式：逐 delta 输出
-        // /completions 返回 choices[0].text（累积），需切片计算 delta
+        // 真 SSE 流式：逐 token 输出
+        // /completions 的 choices[0].text 是增量，与 send() 中 readSSEStream 处理一致
         let fullText = '';
         let finishReason = 'stop';
         const stream = response.body!.pipeThrough(new TextDecoderStream());
@@ -78,10 +83,9 @@ export class OpenAICompletionAdapter implements ILLMAdapter {
                         const choice = json.choices?.[0];
                         if (choice?.text !== undefined) {
                             const cumulative = choice.text as string;
-                            const delta = cumulative.slice(fullText.length);
-                            if (delta) {
-                                fullText = cumulative;
-                                yield delta;
+                            if (cumulative) {
+                                fullText += cumulative;
+                                yield cumulative;
                             }
                         }
                         if (choice?.finish_reason) finishReason = choice.finish_reason;
@@ -99,7 +103,8 @@ export class OpenAICompletionAdapter implements ILLMAdapter {
         this.logService.debug(`[OpenAI] Sending request | model=${request.model} | maxTokens=${request.max_tokens} | temperature=${request.temperature}`);
 
         const url = `${request.baseUrl}/completions`;
-        const body = JSON.stringify({
+
+        const bodyObj: Record<string, unknown> = {
             model: request.model,
             prompt: request.prompt || '',
             max_tokens: request.max_tokens,
@@ -110,7 +115,11 @@ export class OpenAICompletionAdapter implements ILLMAdapter {
             frequency_penalty: request.frequency_penalty,
             stream: request.stream,
             stop: request.stop
-        });
+        };
+
+        applyThinkingParams(bodyObj, request.capabilities, request.family);
+
+        const body = JSON.stringify(bodyObj);
 
         const response =  await fetch(url, {
             method: 'POST',

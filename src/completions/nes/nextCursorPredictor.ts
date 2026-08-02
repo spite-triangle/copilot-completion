@@ -79,7 +79,7 @@ export class NextCursorPredictor {
             lintOptions: { enable: true, tagName: 'diagnostics', warnings: LintOptionWarning.NO, showCode: LintOptionShowCode.NO, maxLints: 10, maxLineDistance: 50, nRecentFiles: 3 },
             neighborFiles: { enabled: false, maxTokens: 2000 },
             pagedClipping: { pageSize: 50 },
-            diffHistory: { onlyForDocsInPrompt: true, maxTokens: 2000, nEntries: 20, useRelativePaths: true },
+            diffHistory: { onlyForDocsInPrompt: true, maxTokens: 2000, nEntries: 15, useRelativePaths: true },
         };
 
         const newPromptPieces = new PromptPieces(
@@ -98,7 +98,6 @@ export class NextCursorPredictor {
         );
 
         const { prompt: userMessage } = getUserPrompt(newPromptPieces);
-        this._log.debug('\n' + userMessage);
 
         try {
             const endpoint = this._config.supportedEndpoint;
@@ -119,7 +118,6 @@ export class NextCursorPredictor {
             };
 
             const userMsgWithHint = userMessage + '\n\n **just output the line int number where the developer will make their next edit.**';
-
             let response: LLMResponse;
             if (endpoint === 'completions') {
                 const prompt = renderCompletionPrompt(
@@ -127,11 +125,14 @@ export class NextCursorPredictor {
                     NextCursorPredictor.NCP_SYSTEM_PROMPT,
                     userMsgWithHint,
                 );
+                
+                this._log.debug(`completions prompt\n ${prompt}`);
                 response = await adapter.send(
                     { ...requestBase, prompt },
                     abortController.signal,
                 );
             } else {
+                this._log.debug(`chat/completions prompt\n ${userMsgWithHint}`);
                 response = await adapter.send(
                     {
                         ...requestBase,

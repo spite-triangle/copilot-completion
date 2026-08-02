@@ -72,7 +72,9 @@ export class NextEditProvider implements INesProvider, vscode.InlineCompletionIt
         const requestUuid = `nes-${Date.now()}-${++_requestSeq}`;
 
         // Primary NES request
+        const startWorkflowTime = Date.now();
         const { editResult, promptPieces } = await this._workflow.execute(document, position, false, token);
+        this._log.info(`[NES]  primary workflow took ${Date.now() - startWorkflowTime}ms`);
 
         if (editResult) {
             return this._toInlineItems(editResult, document, position, requestUuid);
@@ -80,47 +82,50 @@ export class NextEditProvider implements INesProvider, vscode.InlineCompletionIt
 
         // Retry via cursor prediction
         if (!promptPieces || !this._cursorPredictor.isEnabled()) {
-            this._log.debug(`[NES]  NO_RESULT — cursor prediction disabled or no prompt`);
+            this._log.info(`[NES]  NO_RESULT — cursor prediction disabled or no prompt`);
             return undefined;
         }
 
-        if (token.isCancellationRequested) {
-            this._log.debug(`[NES]  NO_RESULT — cancelled before cursor prediction`);
-            return undefined;
+        this._log.info(`[NES]  NO_RESULT — attempting cursor prediction retry`);
+
+        // 重新计时，因为接口提供的 token 可能提前取消
+        const predictCts = new vscode.CancellationTokenSource();
+        const predictTimeout = setTimeout(() => predictCts.cancel(), 3000);
+        try {
+            const startPredictTime = Date.now();
+            let predictionR = await this._cursorPredictor.predict(promptPieces, predictCts.token);
+            this._log.info(`[NES]  cursor prediction took ${Date.now() - startPredictTime}ms`);
+    
+            if (predictionR.isError()) {
+                this._log.debug(`[NES]  cursor prediction error: ${predictionR.err}`);
+                return undefined;
+            }
+            // sameFile: retry NES at predicted position
+            this._log.debug(`[NES]  retry NES at predicted line ${predictionR.val}`);
+    
+            const predictedPos = new vscode.Position(
+                Math.min(predictionR.val, document.lineCount - 1),
+                0,
+            );
+    
+            const startRetryWorkflow = Date.now();
+            const { editResult: retryResult } = await this._workflow.execute(
+                document, predictedPos, true, predictCts.token
+            );
+            this._log.info(`[NES]  retry  workflow took ${Date.now() - startRetryWorkflow}ms`);
+    
+            if (retryResult) {
+                retryResult.cursorPrediction = {
+                    kind: 'sameFile',
+                    lineNumber: predictionR.val
+                };
+                return this._toInlineItems(retryResult, document, predictedPos, requestUuid);
+            }
+        } finally {
+            clearTimeout(predictTimeout);
+            predictCts.dispose();
         }
-        this._log.debug(`[NES]  NO_RESULT — attempting cursor prediction retry`);
-
-        const predictionR = await this._cursorPredictor.predict(promptPieces, token);
-
-        if (token.isCancellationRequested) {
-            this._log.debug(`[NES]  NO_RESULT — cancelled after cursor prediction`);
-            return undefined;
-        }
-
-        if (predictionR.isError()) {
-            this._log.debug(`[NES]  cursor prediction error: ${predictionR.err}`);
-            return undefined;
-        }
-        // sameFile: retry NES at predicted position
-        this._log.debug(`[NES]  retry NES at predicted line ${predictionR.val}`);
-
-        const predictedPos = new vscode.Position(
-            Math.min(predictionR.val, document.lineCount - 1),
-            0,
-        );
-
-        const { editResult: retryResult } = await this._workflow.execute(
-            document, predictedPos, true, token
-        );
-
-        if (retryResult) {
-            retryResult.cursorPrediction = {
-                kind: 'sameFile',
-                lineNumber: predictionR.val
-            };
-            return this._toInlineItems(retryResult, document, position, requestUuid);
-        }
-
+        
         this._log.debug(`[NES]  NO_RESULT — retry also failed`);
         return undefined;
     }

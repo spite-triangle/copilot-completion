@@ -131,23 +131,12 @@ export class NesHistoryTracker implements vscode.Disposable {
             const prevBase = prevEntry.edit.base;
 
             if (this._shouldMergeEdits(prevRepl, prevBase, base, currentEdit, latest.timestamp, now)) {
-                // Merge: replace previous entry with a single clean edit covering
-                // the full change from prevBase to the current document state.
-                // This avoids accumulating many small replacements (e.g. per-char
-                // typing) that produce noisy per-character diff lines.
+                // Merge: compute minimal edit from prevBase → current doc by
+                // trimming common prefix/suffix.  This avoids both per-character
+                // noise (accumulating tiny replacements) AND spurious whole-file
+                // diffs (full-range replacement).
                 latest.remove();
-                const fullNewText = doc.getText();
-                const mergedEdit: IXtabHistoryEntry = {
-                    kind: 'edit',
-                    docId,
-                    edit: {
-                        base: prevBase,
-                        edit: new StringEdit([new StringReplacement(
-                            new OffsetRange(0, prevBase.toString().length),
-                            fullNewText,
-                        )]),
-                    },
-                };
+                const mergedEdit = this._makeMinimalEdit(docId, prevBase, doc.getText());
                 this._pushEntry(key, mergedEdit, now);
             } else {
                 // New logical edit — push as separate entry
@@ -175,6 +164,51 @@ export class NesHistoryTracker implements vscode.Disposable {
     }
 
     // ── merge heuristic ────────────────────────────────────────────────
+
+    /**
+     * Build a {@link IXtabHistoryEntry} whose {@link StringEdit} contains
+     * the minimal replacement from `prevBase` to `newText`.
+     *
+     * Common prefix / suffix are trimmed so the diff only covers the
+     * actually-changed region — essential when merging many small edits
+     * (typing) without producing spurious whole-file diffs.
+     */
+    private _makeMinimalEdit(
+        docId: DocumentId,
+        prevBase: StringText,
+        newText: string,
+    ): IXtabHistoryEntry {
+        const oldText = prevBase.toString();
+        const minLen = Math.min(oldText.length, newText.length);
+
+        let prefixLen = 0;
+        while (prefixLen < minLen && oldText[prefixLen] === newText[prefixLen]) {
+            prefixLen++;
+        }
+
+        const maxSuffix = minLen - prefixLen;
+        let suffixLen = 0;
+        while (suffixLen < maxSuffix
+            && oldText[oldText.length - 1 - suffixLen] === newText[newText.length - 1 - suffixLen]) {
+            suffixLen++;
+        }
+
+        const replaceStart = prefixLen;
+        const replaceEnd = oldText.length - suffixLen;
+        const newPart = newText.substring(prefixLen, newText.length - suffixLen);
+
+        return {
+            kind: 'edit',
+            docId,
+            edit: {
+                base: prevBase,
+                edit: new StringEdit([new StringReplacement(
+                    new OffsetRange(replaceStart, replaceEnd),
+                    newPart,
+                )]),
+            },
+        };
+    }
 
     /**
      * Returns true when `currentEdit` should be merged into the existing edit entry.

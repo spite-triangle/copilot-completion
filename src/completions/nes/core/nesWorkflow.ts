@@ -148,7 +148,6 @@ export class NesWorkflow {
         try {
             const xtabHistory = this._historyTracker.getHistory(DocumentId.create(document.uri.toString()));
             promptAssembly = this._promptAssembler.assemble(document, position,lintEnable, xtabHistory);
-            this._log.debug('\n' + promptAssembly.userPrompt);
         } catch {
             this._log.info(`[NES]  SKIP — prompt too large`);
             return { editResult: undefined };
@@ -196,7 +195,7 @@ export class NesWorkflow {
         });
 
         // Rate limiting: enforce minimum interval between requests
-        const delayMs = 300;
+        const delayMs = 200;
         const waitTime = Math.max(0, delayMs - (Date.now() - lastRequestTime));
         if (waitTime > 0) {
             this._log.debug(`[GHOST] rate_limiting delay=${waitTime}ms`);
@@ -229,6 +228,8 @@ export class NesWorkflow {
                     promptAssembly.systemPrompt,
                     promptAssembly.userPrompt,
                 );
+
+                this._log.debug('completions\n' + prompt);
                 stream = adapter.sendStream(
                     {
                         baseUrl: this._config.baseUrl,
@@ -243,11 +244,11 @@ export class NesWorkflow {
                         stream: this._config.stream,
                         presence_penalty: this._config.presencePenalty,
                         frequency_penalty: this._config.frequencyPenalty,
-                        stop: ['<|im_end|>'],  // ChatML 格式：模型完成生成后输出 <|im_end|> 作为自然停止
                     },
                     abortController.signal,
                 );
             } else {
+                this._log.debug('chat/completions \n' + promptAssembly.userPrompt);
                 stream = adapter.sendStream(
                     {
                         baseUrl: this._config.baseUrl,
@@ -314,7 +315,8 @@ export class NesWorkflow {
                             this._consumeRemainingStream(
                                 stream, accumulated,
                                 DocumentId.create(document.uri.toString()),
-                                docText, position, promptAssembly,
+                                docText, () => document.getText(),
+                                position, promptAssembly,
                                 pipelineContext, abortController.signal
                             ).catch(err => {
                                 if ((err as { name?: string })?.name !== 'AbortError') {
@@ -409,6 +411,7 @@ export class NesWorkflow {
         accumulated: string,
         docId: DocumentId,
         documentText: string,
+        getCurrentDocumentText: () => string,
         position: vscode.Position,
         promptAssembly: { promptPieces: PromptPieces; editWindowLines: string[]; editWindowRange: { start: number; endExclusive: number } },
         pipelineContext: ResponsePipelineContext,
@@ -418,6 +421,13 @@ export class NesWorkflow {
         for await (const delta of stream) {
             if (signal.aborted) return;
             text += delta;
+        }
+        // Skip cache write if document has changed since the request was made.
+        // Otherwise the cache entry would never be hit (key includes full text),
+        // wasting cache space and the background processing effort.
+        if (getCurrentDocumentText() !== documentText) {
+            this._log.debug(`[NES]  background_stream skip cache — document changed`);
+            return;
         }
         // Cache results from the complete response in the background
         const parsedLines = this._responsePipeline.process(text, pipelineContext);
