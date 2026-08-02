@@ -1,5 +1,5 @@
 import { ILogService } from '../log/logService';
-import { ILLMAdapter } from './llmAdapter';
+import { ILLMAdapter, applyThinkingParams } from './llmAdapter';
 import { LLMRequest, LLMResponse, LLMError, Capabilities, normalizeBody } from './llmRequest';
 import { readSSEStream, splitChunk, SSEChunk } from './sseStream';
 
@@ -144,36 +144,4 @@ export class OpenAIChatCompletionAdapter implements ILLMAdapter {
     }
 }
 
-function applyThinkingParams(
-    body: Record<string, unknown>,
-    capabilities?: Capabilities,
-    family?: string,
-): void {
-    if(family === undefined) return;
 
-    if (capabilities?.thinking) {
-        switch (family) {
-            case 'deepseek':
-                body.enable_thinking = capabilities?.thinking === true;
-                break;
-            case 'qwen':
-                body.enable_thinking = capabilities?.thinking === true;
-                break;
-        }
-    }
-
-    if(capabilities?.reasoning_effort){
-        const effort = (capabilities?.reasoning_effort as string) || 'medium'; 
-        switch (family) {
-            case 'openai-o':
-                body.reasoning_effort = effort;
-                break;
-            case 'openai-gpt5':
-                body.reasoning = { effort };
-                break;
-        }
-    }
-
-}
-
-export { applyThinkingParams };

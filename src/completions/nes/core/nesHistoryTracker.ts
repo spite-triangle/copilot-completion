@@ -40,7 +40,7 @@ export class NesHistoryTracker implements vscode.Disposable {
     private readonly _maxEntries = 50;
 
     /** Merge consecutive edits within this time window (ms). */
-    private readonly _mergeWindowMs = 500;
+    private readonly _mergeWindowMs = 3_000;
     /** Merge edits whose replaced lines are within this gap. */
     private readonly _mergeLineGap = 2;
 
@@ -131,15 +131,21 @@ export class NesHistoryTracker implements vscode.Disposable {
             const prevBase = prevEntry.edit.base;
 
             if (this._shouldMergeEdits(prevRepl, prevBase, base, currentEdit, latest.timestamp, now)) {
-                // Merge: remove old, push merged entry
+                // Merge: replace previous entry with a single clean edit covering
+                // the full change from prevBase to the current document state.
+                // This avoids accumulating many small replacements (e.g. per-char
+                // typing) that produce noisy per-character diff lines.
                 latest.remove();
+                const fullNewText = doc.getText();
                 const mergedEdit: IXtabHistoryEntry = {
                     kind: 'edit',
                     docId,
-                    // Keep original base; compose replacement ranges by absorbing current
                     edit: {
                         base: prevBase,
-                        edit: new StringEdit([...prevRepl, ...currentEdit.replacements]),
+                        edit: new StringEdit([new StringReplacement(
+                            new OffsetRange(0, prevBase.toString().length),
+                            fullNewText,
+                        )]),
                     },
                 };
                 this._pushEntry(key, mergedEdit, now);
@@ -174,7 +180,7 @@ export class NesHistoryTracker implements vscode.Disposable {
      * Returns true when `currentEdit` should be merged into the existing edit entry.
      *
      * Merging criteria (Hybrid strategy, aligned with official):
-     *   1. Within time window (default 500ms — fast typing coalescence)
+     *   1. Within time window (default 3s — typing coalescence)
      *   2. Edits touch or are within `_mergeLineGap` lines of each other
      */
     private _shouldMergeEdits(

@@ -85,7 +85,7 @@
         },
         "cc-completion.ghost.capabilities.limits.delay": {
           "type": "number",
-          "default": 150,
+          "default": 200,
           "description": "Minimum delay (ms) between GHOST network requests"
         },
         "cc-completion.ghost.suffixOverlapThreshold": {

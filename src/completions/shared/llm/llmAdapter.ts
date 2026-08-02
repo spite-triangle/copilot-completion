@@ -1,5 +1,5 @@
 import { createServiceIdentifier } from '../../../di/services';
-import { LLMRequest, LLMResponse } from './llmRequest';
+import { Capabilities, LLMRequest, LLMResponse } from './llmRequest';
 import { NesSupportedEndpoint } from '../../../config/nesConfig';
 
 export const ILLMAdapterManager = createServiceIdentifier<ILLMAdapterManager>('ILLMAdapterManager');
@@ -8,6 +8,37 @@ export interface ILLMAdapter {
     send(request: LLMRequest, signal?: AbortSignal): Promise<LLMResponse>;
     /** Streaming variant: yields text deltas, returns the completed LLMResponse. */
     sendStream(request: LLMRequest, signal?: AbortSignal): AsyncGenerator<string, LLMResponse>;
+}
+
+export function applyThinkingParams(
+    body: Record<string, unknown>,
+    capabilities?: Capabilities,
+    family?: string,
+): void {
+    if (family === undefined) return;
+
+    if (capabilities?.thinking) {
+        switch (family) {
+            case 'deepseek':
+                body.enable_thinking = capabilities?.thinking === true;
+                break;
+            case 'qwen':
+                body.enable_thinking = capabilities?.thinking === true;
+                break;
+        }
+    }
+
+    if (capabilities?.reasoning_effort) {
+        const effort = (capabilities?.reasoning_effort as string) || 'medium';
+        switch (family) {
+            case 'openai-o':
+                body.reasoning_effort = effort;
+                break;
+            case 'openai-gpt5':
+                body.reasoning = { effort };
+                break;
+        }
+    }
 }
 
 export interface ILLMAdapterManager {

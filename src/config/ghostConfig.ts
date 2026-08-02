@@ -113,7 +113,7 @@ export class VSCodeGhostConfigProvider implements IGhostConfigProvider {
     }
 
     get delay(): number {
-        return this._cached<number>(ConfigKeys.Ghost.delay, 150);
+        return this._cached<number>(ConfigKeys.Ghost.delay, 200);
     }
 
     get suffixOverlapThreshold(): number {

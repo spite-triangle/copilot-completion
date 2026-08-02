@@ -195,7 +195,7 @@ export class NesWorkflow {
         });
 
         // Rate limiting: enforce minimum interval between requests
-        const delayMs = 100;
+        const delayMs = 300;
         const waitTime = Math.max(0, delayMs - (Date.now() - lastRequestTime));
         if (waitTime > 0) {
             this._log.debug(`[GHOST] rate_limiting delay=${waitTime}ms`);
