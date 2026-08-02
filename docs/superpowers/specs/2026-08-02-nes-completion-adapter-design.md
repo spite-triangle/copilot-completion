@@ -7,11 +7,7 @@
 
 ## 1. 概述
 
-为 NES（Next Edit Suggestion）的 `NesWorkflow` 和 `NextCursorPredictor` 新增通过 `/completions` 端点（FIM adapter）发送请求的能力，通过 `cc-completion.nes.requestFormat` 配置项动态切换。
-
-**注意**：`cc-completion.nes.requestFormat`（本次新增）与现有 `cc-completion.nes.supportedEndpoint`（`'chat/completions' | 'responses' | 'messages'`）是两个**完全独立**的配置：
-- `supportedEndpoint`：选择 LLM API 协议（chat/responses/messages）
-- `requestFormat`：选择请求格式 / adapter 类型（`fim` 用纯文本 prompt，`chat` 用 messages 数组）
+为 NES（Next Edit Suggestion）的 `NesWorkflow` 和 `NextCursorPredictor` 新增通过 `/completions` 端点（FIM adapter）发送请求的能力，通过扩展现有 `cc-completion.nes.supportedEndpoint` 配置项（新增 `'completions'` 值）来切换。
 
 ---
 
@@ -23,28 +19,38 @@
 
 ## 3. 配置变更
 
-### 3.1 `configKeys.ts` — 新增两个配置键
+### 3.1 `configKeys.ts` — 新增一个配置键
 
 ```typescript
 Nes: {
     // ...existing keys...
-    requestFormat: 'cc-completion.nes.requestFormat',
     promptTemplate: 'cc-completion.nes.promptTemplate',
 }
 ```
 
-### 3.2 配置项详情
+### 3.2 `NesSupportedEndpoint` 类型扩展
+
+```typescript
+// 现有：
+export type NesSupportedEndpoint = 'chat/completions' | 'responses' | 'messages';
+
+// 改为：
+export type NesSupportedEndpoint = 'chat/completions' | 'responses' | 'messages' | 'completions';
+```
+
+### 3.3 配置项详情
 
 | 键 | 类型 | 默认值 | 说明 |
 |----|------|--------|------|
-| `cc-completion.nes.requestFormat` | `'fim' \| 'chat'` | `'chat'` | 控制发送请求时使用的 adapter 类型和请求格式 |
-| `cc-completion.nes.promptTemplate` | `string` | 见 §3.3 | 仅 `requestFormat === 'fim'` 时使用，`{system}` / `{user}` 占位符 |
+| `cc-completion.nes.supportedEndpoint` | `'chat/completions' \| 'responses' \| 'messages' \| 'completions'` | `'chat/completions'` | 控制 API 协议和 adapter 类型 |
+| `cc-completion.nes.promptTemplate` | `string` | 见 §3.4 | 仅 `supportedEndpoint === 'completions'` 时使用，`{system}` / `{user}` 占位符 |
 
-**与 `supportedEndpoint` 的关系**：
-- `requestFormat === 'chat'` 时：使用 `supportedEndpoint` 决定 API 协议（现有行为）
-- `requestFormat === 'fim'` 时：`supportedEndpoint` **被忽略**，直接使用 `'completions'` adapter
+当 `supportedEndpoint === 'completions'` 时：
+- 使用 `OpenAICompletionAdapter`（已注册到 `'completions'` 端点）
+- `messages`（system + user）通过 `promptTemplate` 渲染为纯文本 `prompt`
+- `capabilities`（thinking/reasoning_effort）不适用，不发送
 
-### 3.3 默认 `promptTemplate`
+### 3.4 默认 `promptTemplate`
 
 ```
 <|im_start|>system
@@ -57,23 +63,138 @@ Nes: {
 
 末尾 `<|im_start|>assistant\n\n` 的两个换行符是 prompt 格式的一部分，用于引导模型在 `assistant` 标记后直接开始生成回复内容。
 
-### 3.4 `INesConfigProvider` 接口新增
+### 3.5 `INesConfigProvider` 接口变更
+
+`supportedEndpoint` 返回类型不变（仍是 `NesSupportedEndpoint`，该类型已包含 `'completions'`）。新增：
 
 ```typescript
-get requestFormat(): 'fim' | 'chat';
 get promptTemplate(): string;
 ```
 
-### 3.5 `VSCodeNesConfigProvider` 实现
+### 3.6 `VSCodeNesConfigProvider` 实现
 
-- `requestFormat`：读取 `ConfigKeys.Nes.requestFormat`，默认 `'chat'`，走现有 `_cached()` 缓存
-- `promptTemplate`：读取 `ConfigKeys.Nes.promptTemplate`，默认值如 §3.3，走 `_cached()` 缓存
+- `promptTemplate`：读取 `ConfigKeys.Nes.promptTemplate`，默认值如 §3.4，走 `_cached()` 缓存
+- `supportedEndpoint` 现有实现无需修改（`_cached<string>` 直接支持新值 `'completions'`）
 
 ---
 
-## 4. 请求构建层
+## 4. Adapter 层：修复 `OpenAICompletionAdapter.sendStream()` 为真流式
 
-### 4.1 工具函数 `renderCompletionPrompt`
+### 4.1 现状
+
+```typescript
+// 当前是伪流式——内部调用 send() 收集完整响应后只 yield 一次
+async *sendStream(request: LLMRequest, signal?: AbortSignal): AsyncGenerator<string, LLMResponse> {
+    const result = await this.send(request, signal);
+    yield result.text;
+    return result;
+}
+```
+
+### 4.2 改造目标
+
+改为真正的 SSE 逐 token 增量输出，与 `OpenAIChatCompletionAdapter.sendStream()` 一致。
+
+**关键差异**：`/completions` 端点的 SSE 事件格式为 `choices[0].text`（**累积**文本），而 `/chat/completions` 端点为 `choices[0].delta.content`（**增量**文本）。因此需要在流式循环中手动计算 delta。
+
+### 4.3 改造后代码
+
+```typescript
+async *sendStream(request: LLMRequest, signal?: AbortSignal): AsyncGenerator<string, LLMResponse> {
+    this.logService.debug(`[OpenAI] Streaming request | model=${request.model} | maxTokens=${request.max_tokens}`);
+
+    const url = `${request.baseUrl}/completions`;
+    const body = JSON.stringify({
+        model: request.model,
+        prompt: request.prompt || '',
+        max_tokens: request.max_tokens,
+        temperature: request.temperature,
+        top_p: request.top_p,
+        n: request.n,
+        presence_penalty: request.presence_penalty,
+        frequency_penalty: request.frequency_penalty,
+        stream: true,   // 强制流式
+        stop: request.stop,
+    });
+
+    const response = await fetch(url, {
+        method: 'POST', signal,
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${request.apiKey}`,
+        },
+        body: normalizeBody(body),
+    });
+
+    if (!response.ok) {
+        const text = await response.text();
+        this.logService.error(`[OpenAI] Request failed | status=${response.status} | error=${text}`);
+        throw new LLMError(`OpenAI completions API failed: ${response.status}`, response.status, text + body);
+    }
+
+    const ct = response.headers.get('content-type') || '';
+    // 非 SSE 回退：读取完整响应，yield 一次
+    if (!ct.includes('text/event-stream')) {
+        const jsonResponse = this._parseJSON(await response.text());
+        yield jsonResponse.text;
+        return jsonResponse;
+    }
+
+    // 真 SSE 流式：逐 delta 输出
+    let fullText = '';
+    let finishReason = 'stop';
+    const stream = response.body!.pipeThrough(new TextDecoderStream());
+    const reader = stream.getReader();
+    let extra = '';
+    try {
+        while (true) {
+            if (signal?.aborted) {
+                return { text: fullText, finishReason };
+            }
+            const { value: rawChunk, done } = await reader.read();
+            if (done) break;
+            const chunkStr = rawChunk ?? '';
+            const [lines, remainder] = splitChunk(extra + chunkStr);
+            extra = remainder;
+            for (const line of lines) {
+                if (line.startsWith(':')) continue;
+                const data = line.slice('data:'.length).trim();
+                if (data === '[DONE]') {
+                    return { text: fullText, finishReason };
+                }
+                try {
+                    const json = JSON.parse(data) as SSEChunk;
+                    const choice = json.choices?.[0];
+                    if (choice?.text !== undefined) {
+                        // /completions 返回累积文本，计算增量
+                        const cumulative = choice.text as string;
+                        const delta = cumulative.slice(fullText.length);
+                        if (delta) {
+                            fullText = cumulative;
+                            yield delta;
+                        }
+                    }
+                    if (choice?.finish_reason) finishReason = choice.finish_reason;
+                } catch { /* skip malformed JSON */ }
+            }
+        }
+    } finally {
+        try { await reader.cancel(); } catch { /* ignore */ }
+        try { await response.body?.cancel(); } catch { /* ignore */ }
+    }
+    return { text: fullText, finishReason };
+}
+```
+
+### 4.4 `send()` 方法不变
+
+`send()` 保持现有实现（处理 stream 和非 stream 两种响应，但收集全部文本），供 `NextCursorPredictor` 等服务调用。
+
+---
+
+## 5. 请求构建层
+
+### 5.1 工具函数 `renderCompletionPrompt`
 
 新建于 `src/completions/nes/promptCraftingUtils.ts`：
 
@@ -94,17 +215,14 @@ export function renderCompletionPrompt(
 }
 ```
 
-### 4.2 `NesWorkflow` 分支逻辑
+### 5.2 `NesWorkflow` 分支逻辑
 
 在 `execute()` 方法中，`promptAssembly` 由 `this._promptAssembler.assemble(document, position, lintEnable, xtabHistory)` 生成，提供 `promptAssembly.systemPrompt` 和 `promptAssembly.userPrompt`。构建 LLM 请求时：
 
 ```typescript
-// 现有代码
-const endpoint = this._config.supportedEndpoint;  // chat/completions | responses | messages
-const requestFormat = this._config.requestFormat;  // 'fim' | 'chat'
+const endpoint = this._config.supportedEndpoint;
 
-if (requestFormat === 'fim') {
-    // supportedEndpoint 在 fim 模式下被忽略
+if (endpoint === 'completions') {
     const prompt = renderCompletionPrompt(
         this._config.promptTemplate,
         promptAssembly.systemPrompt,
@@ -128,7 +246,7 @@ if (requestFormat === 'fim') {
         // 无 messages, 无 capabilities（thinking/reasoning_effort 仅 chat 有）
     }, abortController.signal);
 } else {
-    // 现有 chat 逻辑不变
+    // 现有 chat/responses/messages 逻辑不变
     const adapter = this._llmManager.getAdapter(endpoint);
     const stream = adapter.sendStream({
         // ...现有 messages + capabilities 参数不变
@@ -136,19 +254,14 @@ if (requestFormat === 'fim') {
 }
 ```
 
-**重要：`OpenAICompletionAdapter.sendStream()` 是伪流式**。其内部调用 `send()`（收集完整响应）后只 yield 一次，并非 SSE 逐 token 增量输出。这意味着在 `fim` 模式下，`NesWorkflow` 的 `for await (const delta of stream)` 循环只会迭代一次，拿到完整响应文本。这会导致：
+`sendStream()` 在 §4 中已改造为真正的 SSE 流式，因此 `fim` 模式下 `NesWorkflow` 的 `for await (const delta of stream)` 循环与 `chat` 模式行为一致——逐 token 增量输出。
 
-- 第一版编辑结果（`firstEditResolved`）的提前解析行为与 `chat` 模式不同——它会在整个响应返回后才触发
-- 1000ms abort 延迟逻辑仍然正常工作（`AbortController` 在 `send()` 调用前设置）
-- 若未来需要逐 token 流式行为，需让 `OpenAICompletionAdapter` 支持真正的 SSE 流式（`/completions` 端点本身支持 `stream: true`）
-
-### 4.3 `NextCursorPredictor` 分支逻辑
+### 5.3 `NextCursorPredictor` 分支逻辑
 
 在 `predict()` 方法中，构建 LLM 请求时：
 
 ```typescript
-const supportedEndpoint = this._config.supportedEndpoint;
-const requestFormat = this._config.requestFormat;
+const endpoint = this._config.supportedEndpoint;
 
 // NextCursorPredictor 使用 adapter.send()（非流式），两种模式一致
 const requestBase = {
@@ -163,18 +276,18 @@ const requestBase = {
     frequency_penalty: this._config.frequencyPenalty,
 };
 
-if (requestFormat === 'fim') {
+if (endpoint === 'completions') {
     const prompt = renderCompletionPrompt(
         this._config.promptTemplate,
-        // 复用与 chat 模式完全相同的系统提示（见下方完整文本）
+        // 复用与 chat 模式完全相同的系统提示
         NCP_SYSTEM_PROMPT,
         userMessage + '\n\n **just output the line int number where the developer will make their next edit.**',
     );
     const adapter = this._llmManager.getAdapter('completions');
     const response = await adapter.send({ ...requestBase, prompt }, abortController.signal);
 } else {
-    // 现有 chat 逻辑不变
-    const adapter = this._llmManager.getAdapter(supportedEndpoint);
+    // 现有 chat/responses/messages 逻辑不变
+    const adapter = this._llmManager.getAdapter(endpoint);
     const response = await adapter.send({
         ...requestBase,
         messages: [
@@ -190,34 +303,17 @@ if (requestFormat === 'fim') {
 
 **参数对比**：
 
-| 参数 | NesWorkflow (chat) | NesWorkflow (fim) | NextCursorPredictor (chat) | NextCursorPredictor (fim) |
-|------|--------------------|--------------------|----------------------------|----------------------------|
+| 参数 | NesWorkflow (chat/responses/messages) | NesWorkflow (completions) | NextCursorPredictor (chat) | NextCursorPredictor (completions) |
+|------|--------------------------------------|---------------------------|----------------------------|-----------------------------------|
 | `messages` | ✅ | ❌ | ✅ | ❌ |
 | `prompt` | ❌ | ✅ | ❌ | ✅ |
-| `capabilities` | ✅ | ❌ | ❌ | ❌ |
+| `capabilities` | ✅ (chat) | ❌ | ❌ | ❌ |
 | `stream` | ✅ | ✅ | ❌ | ❌ |
 | `top_p` | ✅ (1) | ✅ (1) | ❌ | ❌ |
 | `presence_penalty` | ✅ | ✅ | ✅ | ✅ |
 | `frequency_penalty` | ✅ | ✅ | ✅ | ✅ |
 
-> `NextCursorPredictor` 使用 `adapter.send()`（非流式），因此不传 `stream`、`top_p`。`capabilities` 仅在 chat 模式下与 messages 搭配使用，fim 模式下不含此字段。`stop` 仅在 `NesWorkflow` fim 模式下显式传 `undefined`（`OpenAICompletionAdapter` 的 JSON body 包含该字段）。
-
----
-
-## 5. 端点与 Adapter 映射
-
-| `nes.requestFormat` | 使用的 adapter 端点 | `LLMRequest` 关键字段 | `supportedEndpoint` |
-|---------------------|--------------------|-----------------------|---------------------|
-| `'chat'` | `this._config.supportedEndpoint`（默认 `'chat/completions'`） | `messages`, `capabilities` | 参与决策 |
-| `'fim'` | `'completions'`（硬编码） | `prompt`（无 `messages`, 无 `capabilities`） | **被忽略** |
-
-### 5.1 Adapter 注册
-
-`OpenAICompletionAdapter` 已在 `extension.ts` 中注册到 `'completions'` 端点，无需额外改动：
-
-```typescript
-llmManager.register('completions', new OpenAICompletionAdapter(log));
-```
+> `NextCursorPredictor` 使用 `adapter.send()`（非流式），因此不传 `stream`、`top_p`。`capabilities` 仅在 chat 模式下与 messages 搭配使用，completions 模式下不含此字段。
 
 ---
 
@@ -236,17 +332,17 @@ llmManager.register('completions', new OpenAICompletionAdapter(log));
 
 | 文件 | 变更类型 | 说明 |
 |------|----------|------|
-| `src/config/configKeys.ts` | 修改 | 新增 `Nes.requestFormat`, `Nes.promptTemplate` |
-| `src/config/nesConfig.ts` | 修改 | 接口 + 实现新增 `requestFormat`, `promptTemplate` |
-| `src/completions/nes/core/nesWorkflow.ts` | 修改 | 请求构建分支逻辑 |
-| `src/completions/nes/nextCursorPredictor.ts` | 修改 | 请求构建分支逻辑 |
+| `src/config/configKeys.ts` | 修改 | 新增 `Nes.promptTemplate` |
+| `src/config/nesConfig.ts` | 修改 | `NesSupportedEndpoint` 新增 `'completions'`；接口 + 实现新增 `promptTemplate` |
+| `src/completions/shared/llm/openaiCompletionAdapter.ts` | **重要修改** | `sendStream()` 改为真 SSE 流式 |
+| `src/completions/nes/core/nesWorkflow.ts` | 修改 | `supportedEndpoint === 'completions'` 分支逻辑 |
+| `src/completions/nes/nextCursorPredictor.ts` | 修改 | 同上；提取 `NCP_SYSTEM_PROMPT` 常量 |
 | `src/completions/nes/promptCraftingUtils.ts` | 修改 | 新增 `renderCompletionPrompt()` |
-| `src/test/config/nesConfig.test.ts` | 修改 | 新增配置项测试 |
-| `src/test/nes/` | 新增/修改 | `renderCompletionPrompt` 单元测试 |
+| `src/test/config/nesConfig.test.ts` | 修改 | 新增 `promptTemplate` 测试；`supportedEndpoint` 包含 `'completions'` |
+| `src/test/nes/` | 新增/修改 | `renderCompletionPrompt` 单元测试；adapter 流式测试 |
 
 **不需要变更**：
-- `src/completions/shared/llm/` — Adapter 接口和实现完全不变
-- `src/completions/ghost/` — Ghost 与本次改动无关
+- `src/completions/ghost/` — Ghost 不受影响
 - `src/extension.ts` — adapter 注册已存在，无需改动
 
 ---
@@ -255,61 +351,57 @@ llmManager.register('completions', new OpenAICompletionAdapter(log));
 
 ### 8.1 配置测试 (`nesConfig.test.ts`)
 
-- `requestFormat` 默认值为 `'chat'`
-- `requestFormat` 设为 `'fim'` 后正确读取
+- `supportedEndpoint` 支持新值 `'completions'`
 - `promptTemplate` 默认值为 `<|im_start|>` 模板
 - `promptTemplate` 自定义值正确读取
 - 配置变更后缓存正确清除
 
-### 8.2 工具函数测试
+### 8.2 Adapter 流式测试 (`openaiCompletionAdapter`)
+
+- `sendStream()` 真流式：设置 `stream: true`，验证逐 delta yield
+- SSE 累积文本 → delta 计算正确（`choices[0].text` 累积格式）
+- 非 SSE 响应回退：yield 完整文本一次
+- `AbortSignal` 中断后正确返回已收集文本
+- `[DONE]` 信号正确结束流
+
+### 8.3 工具函数测试
 
 - `renderCompletionPrompt` 正确替换 `{system}` 和 `{user}`
 - 空字符串输入处理
-- 模板不含占位符时的行为
 - `{system}` / `{user}` 字面量出现在 content 中的边界情况（已知限制，确保不崩溃）
 
-### 8.3 分支逻辑 Mock 测试（通过 DI 注入）
-
-由于 `NesWorkflow` 和 `NextCursorPredictor` 通过 DI 获取 `ILLMAdapterManager` 和 `INesConfigProvider`，可以通过 mock 这两个依赖来验证分支逻辑：
+### 8.4 分支逻辑 Mock 测试（通过 DI 注入）
 
 ```typescript
-// 伪代码示意
-test('NesWorkflow uses completion adapter when requestFormat=fim', async () => {
+test('NesWorkflow uses completion adapter when supportedEndpoint=completions', async () => {
     const mockConfig = mock<INesConfigProvider>({
-        requestFormat: 'fim',
+        supportedEndpoint: 'completions',
         promptTemplate: '<|im_start|>system\n{system}<|im_end|>\n...',
-        // ... 其他必要 config 值
     });
     const mockLlmManager = mock<ILLMAdapterManager>();
-    const mockAdapter = mock<ILLMAdapter>();
     mockLlmManager.getAdapter.withArgs('completions').returns(mockAdapter);
 
     const workflow = new NesWorkflow(mockConfig, mockLlmManager, ...);
     await workflow.execute(document, position, true);
 
-    // 验证：调用了 getAdapter('completions')
-    // 验证：sendStream 传入的参数包含 prompt 字段，不含 messages
     expect(mockLlmManager.getAdapter).toHaveBeenCalledWith('completions');
     expect(mockAdapter.sendStream).toHaveBeenCalledWith(
         expect.objectContaining({ prompt: expect.any(String) }),
         expect.any(AbortSignal),
     );
 });
-
-test('NextCursorPredictor uses completion adapter when requestFormat=fim', async () => {
-    // 同理验证 predictor 分支
-});
 ```
 
-### 8.4 集成回归测试
+### 8.5 集成回归测试
 
-- `requestFormat='chat'` 时 NES 行为与现有完全一致（回归测试）
-- `requestFormat='fim'` 时 `LLMRequest` 包含 `prompt` 字段，不含 `messages`/`capabilities`
+- `supportedEndpoint='chat/completions'` 时行为与现有完全一致
+- `supportedEndpoint='completions'` 时 `LLMRequest` 含 `prompt` 不含 `messages`/`capabilities`
 
 ---
 
 ## 9. 向后兼容
 
-- 默认 `requestFormat = 'chat'`，现有行为**完全不变**
-- `supportedEndpoint` 字段保持不变，`requestFormat='chat'` 时继续使用
+- 默认 `supportedEndpoint = 'chat/completions'`，现有行为**完全不变**
+- `NesSupportedEndpoint` 扩展为联合类型（新增 `'completions'`），TypeScript 编译时自动覆盖
+- `OpenAICompletionAdapter.send()` 不改动，`sendStream()` 改造为真流式——Ghost 侧（`send()` 调用方）零影响
 - 所有现有测试无需修改
