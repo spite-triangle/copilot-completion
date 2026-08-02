@@ -63,4 +63,19 @@ suite('VSCodeNesConfigProvider', () => {
         const provider = new VSCodeNesConfigProvider(mockContext());
         assert.strictEqual(provider.family, 'standard');
     });
+
+    test('supportedEndpoint defaults to chat/completions', () => {
+        const provider = new VSCodeNesConfigProvider(mockContext());
+        assert.strictEqual(provider.supportedEndpoint, 'chat/completions');
+    });
+
+    test('promptTemplate has expected default', () => {
+        const provider = new VSCodeNesConfigProvider(mockContext());
+        const tmpl = provider.promptTemplate;
+        assert.ok(tmpl.includes('{system}'));
+        assert.ok(tmpl.includes('{user}'));
+        assert.ok(tmpl.includes('<|im_start|>'));
+        assert.ok(tmpl.includes('<|im_end|>'));
+        assert.ok(tmpl.endsWith('\n\n'));
+    });
 });
