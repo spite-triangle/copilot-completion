@@ -6,6 +6,7 @@ import { ILogService } from '../../shared/log/logService';
 import { CachedEdit, INextEditCache } from '../nextEditCache';
 import { NextEditResult } from '../types';
 import { PromptPieces } from '../promptCrafting';
+import { renderCompletionPrompt } from '../promptCraftingUtils';
 import { DocumentId } from '../stubs/types';
 import { PromptAssembler } from './promptAssembler';
 import { EditWindowResolver } from './editWindowResolver';
@@ -221,30 +222,57 @@ export class NesWorkflow {
 
         try {
             this._log.info(`[NES]  REQUEST sent [${Date.now() - t4}ms] requestId=${headerRequestId} endpoint=${endpoint} model=${this._config.model} max_tokens=${this._config.maxOutputTokens}`);
-            const stream = adapter.sendStream(
-                {
-                    baseUrl: this._config.baseUrl,
-                    apiKey: this._config.apiKey,
-                    model: this._config.model,
-                    family: this._config.family,
-                    messages: [
-                        { role: 'system', content: promptAssembly.systemPrompt },
-                        { role: 'user', content: promptAssembly.userPrompt },
-                    ],
-                    max_tokens: this._config.maxOutputTokens,
-                    temperature: 0,
-                    top_p: 1,
-                    n: 1,
-                    stream: this._config.stream,
-                    presence_penalty: this._config.presencePenalty,
-                    frequency_penalty: this._config.frequencyPenalty,
-                    capabilities: {
-                        thinking: this._config.capabilities.supports.thinking,
-                        reasoning_effort: this._config.capabilities.supports.reasoning_effort,
+            let stream: AsyncGenerator<string, LLMResponse>;
+            if (endpoint === 'completions') {
+                const prompt = renderCompletionPrompt(
+                    this._config.promptTemplate,
+                    promptAssembly.systemPrompt,
+                    promptAssembly.userPrompt,
+                );
+                stream = adapter.sendStream(
+                    {
+                        baseUrl: this._config.baseUrl,
+                        apiKey: this._config.apiKey,
+                        model: this._config.model,
+                        family: this._config.family,
+                        prompt,
+                        max_tokens: this._config.maxOutputTokens,
+                        temperature: 0,
+                        top_p: 1,
+                        n: 1,
+                        stream: this._config.stream,
+                        presence_penalty: this._config.presencePenalty,
+                        frequency_penalty: this._config.frequencyPenalty,
+                        stop: ['<|im_end|>'],  // ChatML 格式：模型完成生成后输出 <|im_end|> 作为自然停止
                     },
-                },
-                abortController.signal,
-            );
+                    abortController.signal,
+                );
+            } else {
+                stream = adapter.sendStream(
+                    {
+                        baseUrl: this._config.baseUrl,
+                        apiKey: this._config.apiKey,
+                        model: this._config.model,
+                        family: this._config.family,
+                        messages: [
+                            { role: 'system', content: promptAssembly.systemPrompt },
+                            { role: 'user', content: promptAssembly.userPrompt },
+                        ],
+                        max_tokens: this._config.maxOutputTokens,
+                        temperature: 0,
+                        top_p: 1,
+                        n: 1,
+                        stream: this._config.stream,
+                        presence_penalty: this._config.presencePenalty,
+                        frequency_penalty: this._config.frequencyPenalty,
+                        capabilities: {
+                            thinking: this._config.capabilities.supports.thinking,
+                            reasoning_effort: this._config.capabilities.supports.reasoning_effort,
+                        },
+                    },
+                    abortController.signal,
+                );
+            }
 
             let accumulated = '';
             let firstEditResolved = false;
