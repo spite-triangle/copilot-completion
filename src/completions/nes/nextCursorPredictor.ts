@@ -1,8 +1,10 @@
 import * as vscode from 'vscode';
 import { IInstantiationService } from '../../di/instantiation';
 import { ILLMAdapterManager } from '../shared/llm/llmAdapter';
+import { LLMResponse } from '../shared/llm/llmRequest';
 import { INesConfigProvider } from '../../config/nesConfig';
 import { ILogService } from '../shared/log/logService';
+import { renderCompletionPrompt } from './promptCraftingUtils';
 import { PromptingStrategy, IncludeLineNumbersOption, PromptOptions, LintOptionWarning, LintOptionShowCode } from './stubs/types';
 import { constructTaggedFile, getUserPrompt, PromptPieces } from './promptCrafting';
 import { OffsetRange } from './stubs/offsetRange';
@@ -10,6 +12,9 @@ import { Result } from '../../common/result';
 
 
 export class NextCursorPredictor {
+    private static readonly NCP_SYSTEM_PROMPT =
+        'Your task is to predict the line number where the developer is most likely to make their next edit. If you jump in the current file, just output the line number. If you don\'t think anywhere is a good next line jump target, just output the current line number of the cursor. Make sure to output no explanation, reasoning, extra spaces, etc.';
+
     private _isDisabled = false;
 
     constructor(
@@ -101,27 +106,43 @@ export class NextCursorPredictor {
             const abortController = new AbortController();
             const cancelListener = token?.onCancellationRequested(() => abortController.abort());
 
-            const response = await adapter.send(
-                {
-                    baseUrl: this._config.baseUrl,
-                    apiKey: this._config.apiKey,
-                    model: this._config.model,
-                    family: this._config.family,
-                    messages: [
-                        { 
-                            role: 'system', 
-                            content:  'Your task is to predict the line number where the developer is most likely to make their next edit. If you jump in the current file, just output the line number. If you don\'t think anywhere is a good next line jump target, just output the current line number of the cursor. Make sure to output no explanation, reasoning, extra spaces, etc.'
-                        },
-                        { role: 'user', content: userMessage + '\n\n **just output the line int number where the developer will make their next edit.**' },
-                    ],
-                    max_tokens: this._config.maxOutputTokens,
-                    temperature: 0,
-                    n:1,
-                    presence_penalty: this._config.presencePenalty,
-                    frequency_penalty: this._config.frequencyPenalty
-                },
-                abortController.signal,
-            );
+            const requestBase = {
+                baseUrl: this._config.baseUrl,
+                apiKey: this._config.apiKey,
+                model: this._config.model,
+                family: this._config.family,
+                max_tokens: this._config.maxOutputTokens,
+                temperature: 0,
+                n: 1,
+                presence_penalty: this._config.presencePenalty,
+                frequency_penalty: this._config.frequencyPenalty,
+            };
+
+            const userMsgWithHint = userMessage + '\n\n **just output the line int number where the developer will make their next edit.**';
+
+            let response: LLMResponse;
+            if (endpoint === 'completions') {
+                const prompt = renderCompletionPrompt(
+                    this._config.promptTemplate,
+                    NextCursorPredictor.NCP_SYSTEM_PROMPT,
+                    userMsgWithHint,
+                );
+                response = await adapter.send(
+                    { ...requestBase, prompt },
+                    abortController.signal,
+                );
+            } else {
+                response = await adapter.send(
+                    {
+                        ...requestBase,
+                        messages: [
+                            { role: 'system', content: NextCursorPredictor.NCP_SYSTEM_PROMPT },
+                            { role: 'user', content: userMsgWithHint },
+                        ],
+                    },
+                    abortController.signal,
+                );
+            }
 
             cancelListener?.dispose();
 
