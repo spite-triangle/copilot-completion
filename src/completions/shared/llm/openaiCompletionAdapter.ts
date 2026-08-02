@@ -1,6 +1,6 @@
 import { ILLMAdapter } from './llmAdapter';
 import { LLMRequest, LLMResponse, LLMError, normalizeBody } from './llmRequest';
-import { readSSEStream } from './sseStream';
+import { readSSEStream, splitChunk, SSEChunk } from './sseStream';
 import { ILogService } from '../log/logService';
 
 export class OpenAICompletionAdapter implements ILLMAdapter {
@@ -8,10 +8,91 @@ export class OpenAICompletionAdapter implements ILLMAdapter {
         private readonly logService: ILogService,
     ) {}
 
+    // SSE 解析循环内联（而非复用 readSSEStream）：sendStream() 是 async generator（需要
+    // yield），而 readSSEStream() 是回调模式。在 async generator 内无法从回调中 yield。
     async *sendStream(request: LLMRequest, signal?: AbortSignal): AsyncGenerator<string, LLMResponse> {
-        const result = await this.send(request, signal);
-        yield result.text;
-        return result;
+        this.logService.debug(`[OpenAI] Streaming request | model=${request.model} | maxTokens=${request.max_tokens}`);
+
+        const url = `${request.baseUrl}/completions`;
+        const body = JSON.stringify({
+            model: request.model,
+            prompt: request.prompt || '',
+            max_tokens: request.max_tokens,
+            temperature: request.temperature,
+            top_p: request.top_p,
+            n: request.n,
+            presence_penalty: request.presence_penalty,
+            frequency_penalty: request.frequency_penalty,
+            stream: true,   // sendStream() 始终强制流式，忽略 request.stream 的值
+            stop: request.stop,
+        });
+
+        const response = await fetch(url, {
+            method: 'POST', signal,
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${request.apiKey}`,
+            },
+            body: normalizeBody(body),
+        });
+
+        if (!response.ok) {
+            const text = await response.text();
+            this.logService.error(`[OpenAI] Request failed | status=${response.status} | error=${text}`);
+            throw new LLMError(`OpenAI completions API failed: ${response.status}`, response.status, text + body);
+        }
+
+        const ct = response.headers.get('content-type') || '';
+        // 非 SSE 回退：读取完整响应，yield 一次
+        if (!ct.includes('text/event-stream')) {
+            const jsonResponse = this._parseJSON(await response.text());
+            yield jsonResponse.text;
+            return jsonResponse;
+        }
+
+        // 真 SSE 流式：逐 delta 输出
+        // /completions 返回 choices[0].text（累积），需切片计算 delta
+        let fullText = '';
+        let finishReason = 'stop';
+        const stream = response.body!.pipeThrough(new TextDecoderStream());
+        const reader = stream.getReader();
+        let extra = '';
+        try {
+            while (true) {
+                if (signal?.aborted) {
+                    return { text: fullText, finishReason };
+                }
+                const { value: rawChunk, done } = await reader.read();
+                if (done) break;
+                const chunkStr = rawChunk ?? '';
+                const [lines, remainder] = splitChunk(extra + chunkStr);
+                extra = remainder;
+                for (const line of lines) {
+                    if (line.startsWith(':')) continue;
+                    const data = line.slice('data:'.length).trim();
+                    if (data === '[DONE]') {
+                        return { text: fullText, finishReason };
+                    }
+                    try {
+                        const json = JSON.parse(data) as SSEChunk;
+                        const choice = json.choices?.[0];
+                        if (choice?.text !== undefined) {
+                            const cumulative = choice.text as string;
+                            const delta = cumulative.slice(fullText.length);
+                            if (delta) {
+                                fullText = cumulative;
+                                yield delta;
+                            }
+                        }
+                        if (choice?.finish_reason) finishReason = choice.finish_reason;
+                    } catch { /* skip malformed JSON */ }
+                }
+            }
+        } finally {
+            try { await reader.cancel(); } catch { /* ignore */ }
+            try { await response.body?.cancel(); } catch { /* ignore */ }
+        }
+        return { text: fullText, finishReason };
     }
 
     async send(request: LLMRequest, signal?: AbortSignal): Promise<LLMResponse> {
