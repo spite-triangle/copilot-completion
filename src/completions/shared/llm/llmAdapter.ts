@@ -17,13 +17,16 @@ export function applyThinkingParams(
 ): void {
     if (family === undefined) return;
 
-    if (capabilities?.thinking) {
+    if (capabilities?.thinking !== undefined) {
+        const enabled = capabilities?.thinking === true;
         switch (family) {
+            case 'standard':
             case 'deepseek':
-                body.enable_thinking = capabilities?.thinking === true;
-                break;
+            case 'moonshot':
+            case 'minimax':
             case 'qwen':
-                body.enable_thinking = capabilities?.thinking === true;
+                body.enable_thinking = enabled;
+                body.chat_template_kwargs = { enable_thinking: enabled };
                 break;
         }
     }

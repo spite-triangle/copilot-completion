@@ -76,7 +76,7 @@ export class NextEditProvider implements INesProvider, vscode.InlineCompletionIt
         const { editResult, promptPieces } = await this._workflow.execute(document, position, false, token);
         this._log.info(`[NES]  primary workflow took ${Date.now() - startWorkflowTime}ms`);
 
-        if (editResult) {
+        if (editResult && editResult.fullEditText !== '') {
             return this._toInlineItems(editResult, document, position, requestUuid);
         }
 
@@ -90,7 +90,7 @@ export class NextEditProvider implements INesProvider, vscode.InlineCompletionIt
 
         // 重新计时，因为接口提供的 token 可能提前取消
         const predictCts = new vscode.CancellationTokenSource();
-        const predictTimeout = setTimeout(() => predictCts.cancel(), 3000);
+        const predictTimeout = setTimeout(() => predictCts.cancel(),5000);
         try {
             const startPredictTime = Date.now();
             let predictionR = await this._cursorPredictor.predict(promptPieces, predictCts.token);
@@ -102,7 +102,14 @@ export class NextEditProvider implements INesProvider, vscode.InlineCompletionIt
             }
             // sameFile: retry NES at predicted position
             this._log.debug(`[NES]  retry NES at predicted line ${predictionR.val}`);
-    
+
+            // Aligns with official: if predicted line falls within the original edit window,
+            // the user already saw / is near this area — skip cursor prediction.
+            if (promptPieces.editWindowLinesRange.contains(predictionR.val)) {
+                this._log.debug(`[NES]  cursor prediction within edit window, skipping retry`);
+                return undefined;
+            }
+
             const predictedPos = new vscode.Position(
                 Math.min(predictionR.val, document.lineCount - 1),
                 0,
@@ -143,23 +150,7 @@ export class NextEditProvider implements INesProvider, vscode.InlineCompletionIt
             requestUuid,
         );
 
-        // 1. Cursor jump: create jump-to-position item (no insertText)
-        if (result.jumpToPosition) {
-            const item: NesCompletionItem = {
-                insertText: '',
-                range: result.range,
-                jumpToPosition: result.jumpToPosition,
-                isInlineEdit: true,
-                isInlineCompletion: false,
-                showInlineEditMenu: true,
-                showInlinedDiff: false,
-                shouldBeInlineEdit: true,
-                info,
-            };
-            return new NesCompletionList(requestUuid, [item]);
-        }
-
-        // 2. Try to convert to inline (ghost text) suggestion
+        // 1. Try to convert to inline (ghost text) suggestion
         const inline = this._inlineSuggestionResolver.resolve(
             cursorPosition,
             document,
@@ -169,7 +160,7 @@ export class NextEditProvider implements INesProvider, vscode.InlineCompletionIt
 
         const isInlineCompletion = !!inline;
 
-        // 3. Gate: suppress if was previously shown as inline but now can't be
+        // 2. Gate: suppress if was previously shown as inline but now can't be
         if (
             this._config.mimicGhostTextBehavior
             && result.cacheEntry?.wasRenderedAsInlineSuggestion
@@ -179,16 +170,16 @@ export class NextEditProvider implements INesProvider, vscode.InlineCompletionIt
             return new NesCompletionList(requestUuid, []);
         }
 
-        // 4. Mark cache entry as rendered inline
+        // 3. Mark cache entry as rendered inline
         if (isInlineCompletion && result.cacheEntry) {
             result.cacheEntry.wasRenderedAsInlineSuggestion = true;
         }
 
-        // 5. Use adjusted range/text if inline, otherwise precise diff range/text
+        // 4. Use adjusted range/text if inline, otherwise precise diff range/text
         const range = inline?.range ?? result.range;
         const insertText = inline?.newText ?? result.edit;
 
-        // 6. Build item
+        // 5. Build item
         const item: NesCompletionItem = {
             insertText,
             range,
@@ -203,15 +194,7 @@ export class NextEditProvider implements INesProvider, vscode.InlineCompletionIt
         if (result.displayLocation) {
             item.displayLocation = result.displayLocation;
         }
-
-        if (result.cursorPrediction) {
-            item.command = {
-                title: 'NES cursor jump',
-                command: 'cc-completion.nes.cursorJump',
-                arguments: [result.cursorPrediction],
-            };
-        }
-
+        this._log.info(`[NES]  INLINE_EDIT — showing inline suggestion`);
         return new NesCompletionList(requestUuid, [item]);
     }
 }

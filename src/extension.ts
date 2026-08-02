@@ -102,33 +102,7 @@ function registerLLMAdapters(
 
     // GHOST: always completions
     llmManager.register('completions', new OpenAICompletionAdapter(log));
-    log.debug('Registered GHOST adapter: completions');
-
-    // NES: based on supportedEndpoint config
-    const endpoint = nesConfig.supportedEndpoint;
-    const { baseUrl, apiKey, model } = nesConfig;
-
-    switch (endpoint) {
-        case 'chat/completions':
-            llmManager.register('chat/completions', new OpenAIChatCompletionAdapter());
-            break;
-        // TODO - support other endpoints like 'responses' and 'messages' once we have a use case for them
-        // case 'responses':
-        //     llmManager.register('responses', new OpenAIResponseAdapter(
-        //         baseUrl, apiKey, model,
-        //         nesConfig.presencePenalty,
-        //         nesConfig.frequencyPenalty,
-        //         nesConfig.stream,
-        //     ));
-        //     break;
-        // case 'messages':
-        //     llmManager.register('messages', new AnthropicAdapter(
-        //         baseUrl, apiKey, model,
-        //         nesConfig.stream,
-        //     ));
-        //     break;
-    }
-    log.debug(`Registered NES adapter: ${endpoint}`);
+    llmManager.register('chat/completions', new OpenAIChatCompletionAdapter());
 }
 
 export function deactivate() {}

@@ -159,8 +159,13 @@
         },
         "cc-completion.nes.capabilities.limits.max_output_tokens": {
           "type": "number",
-          "default": 8192,
+          "default": 4800,
           "description": "Max output tokens for NES (hard cap)"
+        },
+        "cc-completion.nes.promptTemplate": {
+          "type": "string",
+          "default": "<|im_start|>system\n{system}<|im_end|>\n<|im_start|>user\n{user}<|im_end|>\n<|im_start|>assistant\n",
+          "description": "NES prompt template. Use {system} and {user} placeholders."
         },
         "cc-completion.nes.capabilities.limits.max_context_window_tokens": {
           "type": "number",

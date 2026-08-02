@@ -24,7 +24,7 @@ Code completion VS Code extension powered by LLMs — supporting both **GHOST** 
 
 - Predicts the developer's **next edit** anywhere in the current file (not just at the cursor)
 - **Edit window** resolution around the cursor with merge conflict marker awareness
-- **Cursor jump prediction**: anticipates where the developer will navigate next. **This feature is not good for normal LLM.**
+- **Cursor jump prediction**: anticipates where the developer will navigate next. **This feature is available, but predication will lead to extra twice request.**
 - **Edit intent classification**: high / medium / low aggressiveness filtering
 - Response post-processing pipeline: boundary marker parsing → cursor tag stripping → line-level diff → suffix overlap trimming
 - Multiple response format handlers: edit-window, code-block, edit-intent, unified XML, custom diff-patch
@@ -33,7 +33,7 @@ Code completion VS Code extension powered by LLMs — supporting both **GHOST** 
 
 | Adapter | API Endpoint | Best For |
 |---|---|---|
-| `OpenAIChatAdapter` | `/chat/completions` | NES |
+| `OpenAIChatAdapter` | `/chat/completions, /completions` | NES |
 | `OpenAICompletionAdapter` | `/completions` | Native FIM (GHOST) |
 
 > [!tip]
@@ -81,6 +81,8 @@ All settings are under the `cc-completion` prefix.
 | `nes.presencePenalty` | `number` | `1` | Presence penalty (-2 to 2) |
 | `nes.frequencyPenalty` | `number` | `0.2` | Frequency penalty (-2 to 2) |
 | `nes.stream` | `boolean` | `true` | Enable SSE streaming |
+| `nes.promptTemplate` | `string` | `<|im_start|>system\n{system}<|im_end|>\n<|im_start|>user\n{user}<|im_end|>\n<|im_start|>assistant\n` | `/v1/completions` prompt template |
+
 
 ## Commands
 

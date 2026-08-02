@@ -92,7 +92,7 @@ export class NesWorkflow {
                             if (pending.liveDependants <= 0) {
                                 pending.abortController.abort();
                             }
-                        }, 1000);
+                        }, 2000);
                     }
                 });
 
@@ -191,7 +191,7 @@ export class NesWorkflow {
                 }
                 this._log.info(`[NES]  ABORT — executing after 1000ms delay`);
                 abortController.abort();
-            }, 1000);
+            }, 2000);
         });
 
         // Rate limiting: enforce minimum interval between requests
@@ -244,6 +244,10 @@ export class NesWorkflow {
                         stream: this._config.stream,
                         presence_penalty: this._config.presencePenalty,
                         frequency_penalty: this._config.frequencyPenalty,
+                        capabilities: {
+                            thinking: this._config.capabilities.supports.thinking,
+                            reasoning_effort: this._config.capabilities.supports.reasoning_effort,
+                        },
                     },
                     abortController.signal,
                 );

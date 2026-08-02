@@ -106,12 +106,13 @@ export class EditResultAssembler {
             const lineIdx = Math.max(0, edit.lineRange.startLineNumber);
             const origLine = document.lineAt(lineIdx).text;
             const newLine = edit.newLines[0];
-            let charHead = 0;
-            while (charHead < origLine.length && charHead < newLine.length
-                && origLine[charHead] === newLine[charHead]) {
-                charHead++;
-            }
-            editText = newLine.substring(charHead);
+            // let charHead = 0;
+            // while (charHead < origLine.length && charHead < newLine.length
+            //     && origLine[charHead] === newLine[charHead]) {
+            //     charHead++;
+            // }
+
+            editText = newLine.substring(range.start.character);
         } else {
             editText = edit.newLines.join('\n');
         }

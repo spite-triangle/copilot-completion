@@ -115,9 +115,23 @@ export class NextCursorPredictor {
                 n: 1,
                 presence_penalty: this._config.presencePenalty,
                 frequency_penalty: this._config.frequencyPenalty,
+                capabilities: {
+                    thinking: this._config.capabilities.supports.thinking,
+                    reasoning_effort: this._config.capabilities.supports.reasoning_effort,
+                },
             };
 
-            const userMsgWithHint = userMessage + '\n\n **just output the line int number where the developer will make their next edit.**';
+            const userMsgWithHint = userMessage + `
+**just output the line int number where the developer will make their next edit.** 
+
+output example as follow:
+
+\`\`\`
+###remain stat boundary line######
+1
+###remain end boundary line######
+\`\`\`
+`;
             let response: LLMResponse;
             if (endpoint === 'completions') {
                 const prompt = renderCompletionPrompt(
@@ -150,9 +164,29 @@ export class NextCursorPredictor {
             if (response.text.trim() === '') {
                 return Result.error('emptyResponse');
             }
-            this._log.info(`predict next line: ${response.text}`);
+            this._log.debug(`predict next line: ${response.text}`);
 
-            const lineNumber = parseInt(response.text.trim(), 10);
+            let target = "";
+            let bFlag = false;
+            for(const line of response.text.split('\n')){
+                const text = line.trim();
+                if(text.startsWith('###remain stat boundary line')){
+                    bFlag = true;
+                    continue;
+                }
+                if(text.startsWith('###remain end boundary line')){
+                    break;
+                }
+                if(bFlag){
+                    target += text;
+                }
+            }
+            if(target.trim() === ''){
+                target = response.text;
+            }
+            target = target.replaceAll(/<think>[\s\S]*<\/think>/g, '').trim();
+            this._log.info(`predict next line: ${target}`);
+            const lineNumber = parseInt(target, 10);
             if(isNaN(lineNumber) || lineNumber < 0){
                 return Result.error('line number is not positive number');
             }
