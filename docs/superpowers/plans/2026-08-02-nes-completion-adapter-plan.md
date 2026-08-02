@@ -105,6 +105,8 @@ git commit -m "feat: extend NesSupportedEndpoint with 'completions', add promptT
 
 将 `sendStream` 方法（第 10-14 行）替换为：
 
+> **SSE 解析循环重复说明**：`sendStream()` 是 async generator（需要 `yield`），而 `sseStream.ts` 的 `readSSEStream()` 是回调模式。在 async generator 内无法从回调中 yield，因此内联了 SSE 循环。这是为了适应 yield 语义的有意取舍。
+
 ```typescript
     async *sendStream(request: LLMRequest, signal?: AbortSignal): AsyncGenerator<string, LLMResponse> {
         this.logService.debug(`[OpenAI] Streaming request | model=${request.model} | maxTokens=${request.max_tokens}`);
@@ -119,7 +121,7 @@ git commit -m "feat: extend NesSupportedEndpoint with 'completions', add promptT
             n: request.n,
             presence_penalty: request.presence_penalty,
             frequency_penalty: request.frequency_penalty,
-            stream: true,
+            stream: true,   // sendStream() 始终强制流式，忽略 request.stream 的值
             stop: request.stop,
         });
 
@@ -277,11 +279,25 @@ suite('renderCompletionPrompt', () => {
         assert.ok(!result.includes('{user}'));
     });
 
-    test('handles literal {system} in content (known limitation)', () => {
-        // 已知限制：content 中的 {system} 会被替换
+    test('handles literal {system} in content (known limitation - bidirectional)', () => {
+        // 已知限制：content 中的 {system}/{user} 都会被替换，两个方向都有风险
         const result = renderCompletionPrompt(DEFAULT_TEMPLATE, 'literal {user}', 'literal {system}');
         assert.ok(!result.includes('{system}'));
         assert.ok(!result.includes('{user}'));
+    });
+
+    test('system only contains {user} literal (known limitation)', () => {
+        // system content 中的 {user} 也会被错误替换
+        const result = renderCompletionPrompt(DEFAULT_TEMPLATE, 'explain how to use {user}', 'Hello');
+        assert.ok(!result.includes('{user}'));
+        assert.ok(result.includes('explain how to use Hello'));
+    });
+
+    test('user only contains {system} literal (known limitation)', () => {
+        // user content 中的 {system} 也会被错误替换
+        const result = renderCompletionPrompt(DEFAULT_TEMPLATE, 'You are helpful', 'explain the {system} concept');
+        assert.ok(!result.includes('{system}'));
+        assert.ok(result.includes('explain the You are helpful concept'));
     });
 
     test('preserves trailing newlines from template', () => {
@@ -295,7 +311,7 @@ suite('renderCompletionPrompt', () => {
 - [ ] **Step 4: 运行测试**
 
 Run: `npm test -- --grep "renderCompletionPrompt"`
-Expected: 5 通过
+Expected: 7 通过
 
 - [ ] **Step 5: 提交**
 
@@ -388,7 +404,7 @@ import { renderCompletionPrompt } from '../promptCraftingUtils';
                         stream: this._config.stream,
                         presence_penalty: this._config.presencePenalty,
                         frequency_penalty: this._config.frequencyPenalty,
-                        stop: undefined,
+                        stop: ['<|im_end|>'],  // ChatML 格式：模型完成生成后输出 <|im_end|> 作为自然停止
                     },
                     abortController.signal,
                 );
@@ -623,7 +639,17 @@ git commit -m "test: add promptTemplate and supportedEndpoint config tests"
 Run: `npm test`
 Expected: 全部通过，无回归
 
-- [ ] **Step 2: 全量编译**
+- [ ] **Step 2: chat 模式 NextCursorPredictor 回归验证**
+
+确认 `supportedEndpoint: 'chat/completions'`（默认）时 `NextCursorPredictor` 行为与改动前完全一致：
+- 使用 `NextCursorPredictor.NCP_SYSTEM_PROMPT` 常量构建 system message
+- 使用 `messages` 数组发送请求（非 prompt 字符串）
+- 用户消息末尾追加 `"\n\n **just output the line int number where the developer will make their next edit.**"`
+
+Run: `npm test -- --grep "NextCursorPredictor|nextCursorPredictor"`
+Expected: 所有相关测试通过
+
+- [ ] **Step 3: 全量编译**
 
 Run: `npm run compile`
 Expected: 零错误
@@ -648,5 +674,5 @@ git log --oneline -6
 | `src/completions/nes/promptCraftingUtils.ts` | Task 3 | +~10 行 |
 | `src/completions/nes/core/nesWorkflow.ts` | Task 4 | +1 import, if/else 分支 |
 | `src/completions/nes/nextCursorPredictor.ts` | Task 5 | +2 import, +常量, if/else 分支 |
-| `src/test/nes/promptCraftingUtils.test.ts` | Task 3 | 新建，5 个测试 |
+| `src/test/nes/promptCraftingUtils.test.ts` | Task 3 | 新建，7 个测试 |
 | `src/test/config/nesConfig.test.ts` | Task 6 | +3 个测试 |
