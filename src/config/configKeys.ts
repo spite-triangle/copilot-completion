@@ -33,5 +33,6 @@ export const ConfigKeys = {
         stream: 'cc-completion.nes.stream',
         nextCursorPredictionEnabled: 'cc-completion.nes.nextCursorPrediction.enabled',
         mimicGhostTextBehavior: 'cc-completion.nes.mimicGhostTextBehavior',
+        promptTemplate: 'cc-completion.nes.promptTemplate',
     }
 } as const;

@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { createServiceIdentifier } from '../di/services';
 import { ConfigKeys } from './configKeys';
 
-export type NesSupportedEndpoint = 'chat/completions' | 'responses' | 'messages';
+export type NesSupportedEndpoint = 'chat/completions' | 'responses' | 'messages' | 'completions';
 
 export interface NesCapabilities {
     limits: {
@@ -36,6 +36,7 @@ export interface INesConfigProvider {
     get nextCursorPredictionEnabled(): boolean;
     set nextCursorPredictionEnabled(value: boolean);
     get mimicGhostTextBehavior(): boolean;
+    get promptTemplate(): string;
     onDidChangeEnabled(listener: () => void): vscode.Disposable;
 }
 
@@ -153,6 +154,13 @@ export class VSCodeNesConfigProvider implements INesConfigProvider {
 
     get mimicGhostTextBehavior(): boolean {
         return this._cached<boolean>(ConfigKeys.Nes.mimicGhostTextBehavior, false);
+    }
+
+    get promptTemplate(): string {
+        return this._cached<string>(
+            ConfigKeys.Nes.promptTemplate,
+            '<|im_start|>system\n{system}<|im_end|>\n<|im_start|>user\n{user}<|im_end|>\n<|im_start|>assistant\n\n',
+        );
     }
 
     onDidChangeEnabled(listener: () => void): vscode.Disposable {
