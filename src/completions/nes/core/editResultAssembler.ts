@@ -3,9 +3,22 @@ import { NextEditResult } from '../types';
 import { CachedEdit } from '../nextEditCache';
 import { ResponseDiffer } from '../response/responseDiffer';
 import { LineReplacement } from '../response/lineReplacement';
-import { EditWindowResolver } from './editWindowResolver';
+import { EditWindowResolver, LineSource } from './editWindowResolver';
 import { TrimCompletionSuffixOverlap } from '../../../common/suffixOverlapTrim';
 import { ILogService } from '../../shared/log/logService';
+
+/** Maximum suffix lines to read for fuzzy overlap detection (avoids reading entire file). */
+const MAX_SUFFIX_LINES_FOR_OVERLAP = 100;
+
+/** Read a slice of lines from a LineSource into an array. */
+function readLineSlice(source: LineSource, start: number, endExclusive: number): string[] {
+    const lines: string[] = [];
+    for (let i = start; i < endExclusive; i++) {
+        lines.push(source.lineText(i));
+    }
+    return lines;
+}
+
 
 export class EditResultAssembler {
     private readonly _responseDiffer = new ResponseDiffer();
@@ -34,10 +47,13 @@ export class EditResultAssembler {
         overlapType: 'low' | 'high' = 'high',
         logger?: ILogService
     ): NextEditResult {
-        const documentText = document.getText().replaceAll("\r\n","\n");
-        const documentLines = documentText.split('\n');
-        const ewRange = this._editWindowResolver.resolve(documentLines, position.line);
-        const originalLines = documentLines.slice(ewRange.start, ewRange.endExclusive);
+        // Use lightweight LineSource — avoids O(N) document.getText() for large files
+        const docSource: LineSource = {
+            lineCount: document.lineCount,
+            lineText: (i: number) => document.lineAt(i).text,
+        };
+        const ewRange = this._editWindowResolver.resolve(docSource, position.line);
+        const originalLines = readLineSlice(docSource, ewRange.start, ewRange.endExclusive);
 
         // Phase 3: ResponseProcessor.diff() equivalent — line-level diff
         const lineEdits = this._responseDiffer.compute(originalLines, responseLines);
@@ -57,18 +73,16 @@ export class EditResultAssembler {
         };
         edit = new LineReplacement(docLineRange, edit.newLines);
 
-        // Phase 6: TrimNESResponseSuffixOverlap — trim suffix overlap using LineReplacement end line
-        const fullEditText = edit.newLines.join('\n');
+        // Phase 6: TrimNESResponseSuffixOverlap — trim suffix overlap
         const documentBeforeEdits = originalLines.join('\n');
 
         // Suffix starts from AFTER the line replacement range in the document
         const suffixStartLine = docLineRange.endLineNumberExclusive;
-        const suffixLines = suffixStartLine < documentLines.length
-            ? documentLines.slice(suffixStartLine)
-            : [];
-
+        const suffixEnd = Math.min(suffixStartLine + MAX_SUFFIX_LINES_FOR_OVERLAP, docSource.lineCount);
+        const suffixLines = readLineSlice(docSource, suffixStartLine, suffixEnd);
         const trimmer = new TrimCompletionSuffixOverlap(overlapThreshold, overlapType);
         const overlapCount = trimmer.calculateOverlap(edit.newLines, suffixLines);
+
         logger?.info(`overlap count : ${overlapCount}`)
         if (overlapCount > 0) {
             const trimmedNewLines = edit.newLines.slice(0, edit.newLines.length - overlapCount);
@@ -103,15 +117,7 @@ export class EditResultAssembler {
                 editText = edit.newLines.join('\n') + '\n';
             }
         } else if (edit.isSingleLineEdit) {
-            const lineIdx = Math.max(0, edit.lineRange.startLineNumber);
-            const origLine = document.lineAt(lineIdx).text;
             const newLine = edit.newLines[0];
-            // let charHead = 0;
-            // while (charHead < origLine.length && charHead < newLine.length
-            //     && origLine[charHead] === newLine[charHead]) {
-            //     charHead++;
-            // }
-
             editText = newLine.substring(range.start.character);
         } else {
             editText = edit.newLines.join('\n');
@@ -132,13 +138,9 @@ export class EditResultAssembler {
             range,
             edit: editText,
             documentBeforeEdits,
-            fullEditText,
+            fullEditText: edit.newLines.join('\n'),
             edits: [{ replaceRange: range, newText: editText }],
             cursorAfterEdit,
-            // displayLocation: {
-            //     range,
-            //     label: "",
-            // },
             cacheEntry,
             isFromCursorJump: false,
         };

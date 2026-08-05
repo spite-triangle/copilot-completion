@@ -37,7 +37,10 @@ export class PromptAssembler {
 
         // Resolve edit window range
         const normalizedLines = normalizedText.split('\n');
-        const ewRange = this._editWindowResolver.resolve(normalizedLines, effectivePosition.line);
+        const ewRange = this._editWindowResolver.resolve(
+            { lineCount: normalizedLines.length, lineText: (i: number) => normalizedLines[i] },
+            effectivePosition.line,
+        );
 
         // Area around edit window range — use effectivePosition so NCP retry centers on the predicted position
         const aaStart = Math.max(0, effectivePosition.line - N_LINES_AS_CONTEXT);

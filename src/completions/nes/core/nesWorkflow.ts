@@ -87,12 +87,12 @@ export class NesWorkflow {
                 const cancelDisposable = token?.onCancellationRequested(() => {
                     pending.liveDependants--;
                     if (pending.liveDependants <= 0) {
-                        this._log.info(`[NES]  ABORT — all dependants gone (1000ms delay)`);
+                        this._log.info(`[NES]  ABORT — all dependants gone.`);
                         setTimeout(() => {
                             if (pending.liveDependants <= 0) {
                                 pending.abortController.abort();
                             }
-                        }, 2000);
+                        }, 1200);
                     }
                 });
 
@@ -181,7 +181,7 @@ export class NesWorkflow {
         this._pendingRequest = pendingRequest;
         let cancelTimer: ReturnType<typeof setTimeout> | undefined;
         const cancelListener = token?.onCancellationRequested(() => {
-            this._log.info(`[NES]  ABORT — CancellationToken triggered (1000ms delay)`);
+            this._log.info(`[NES]  ABORT — CancellationToken triggered.`);
             if (cancelTimer) clearTimeout(cancelTimer);
             cancelTimer = setTimeout(() => {
                 if (abortController.signal.aborted) return;
@@ -189,9 +189,9 @@ export class NesWorkflow {
                     this._log.info(`[NES]  ABORT — skipped (${pendingRequest.liveDependants} dependants)`);
                     return;
                 }
-                this._log.info(`[NES]  ABORT — executing after 1000ms delay`);
+                this._log.info(`[NES]  ABORT — executing after.`);
                 abortController.abort();
-            }, 2000);
+            }, 1200);
         });
 
         // Rate limiting: enforce minimum interval between requests

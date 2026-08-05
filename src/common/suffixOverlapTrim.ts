@@ -134,7 +134,7 @@ export class TrimCompletionSuffixOverlap {
 
 		const commonLen = Math.min(input.length, target.length);
 		if (commonLen === 0) { return 0; }
-		const maxLen = Math.floor(commonLen / Math.min(this.similarityThreshold + 0.05, 1));
+		const maxLen = Math.ceil(commonLen / Math.min(this.similarityThreshold + 0.00001, 1));
 		const inputLen = Math.min(input.length, maxLen);
 		const targetLen = Math.min(target.length, maxLen);
 
