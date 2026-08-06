@@ -57,8 +57,9 @@ export interface LineRange0Based {
 
 /** VSCode-compatible inline completion list with forward stability enabled. */
 export class NesCompletionList extends vscode.InlineCompletionList {
-    /** VS Code runtime reads this property. Not declared on base type. */
-    public readonly enableForwardStability = true;
+    /** VS Code 1.132+ runtime reads this property. */
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    public enableForwardStability = true;
 
     constructor(
         public readonly requestUuid: string,
@@ -89,13 +90,22 @@ export interface NesCompletionItem extends vscode.InlineCompletionItem {
     /** VS Code runtime: indicates this suggestion can be rendered as an inline edit */
     shouldBeInlineEdit?: boolean;
     jumpToPosition?: vscode.Position;
+    /** VS Code 1.132+: display location with kind for rendering */
     displayLocation?: {
         range: vscode.Range;
         label: string;
+        /** VS Code 1.132+ InlineCompletionDisplayLocationKind */
+        kind?: number;
     };
     info?: NesCompletionInfo;
     wasShown?: boolean;
     isEditInAnotherDocument?: boolean;
-    /** Default action command shown with the suggestion */
-    command?: vscode.Command;
+    /** VS Code 1.132+: default action shown with the suggestion (replaces command) */
+    action?: vscode.Command;
+    /** VS Code 1.132+: whether F2 rename should update this suggestion */
+    supportsRename?: boolean;
+    /** VS Code 1.132+: correlation ID for telemetry */
+    correlationId?: string;
+    /** VS Code 1.132+: display range for cross-file NES */
+    showRange?: vscode.Range;
 }

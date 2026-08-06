@@ -2,16 +2,14 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Code completion VS Code extension powered by LLMs — supporting both **GHOST** (Fill-in-the-Middle) inline completions and **NES** (Next Edit Suggestion) predictive edits.
+Code completion VS Code extension powered by LLMs — supporting both **GHOST** FIM inline completions and **NES** (Next Edit Suggestion) predictive edits.
 
 [中文文档](README.zh-CN.md)
 
-> [!note]
-> Due to changes in the VS Code API, NES may not function correctly in VS Code versions `1.125 ~ 1.131`. Moreover, as the API continues to evolve in the latest repository, adaptation will be provided for versions after `1.132`.
 
 ## Features
 
-### GHOST — Fill-in-the-Middle (FIM) Inline Completion
+### GHOST — FIM (Fill in the Middle) Inline Completion
 
 - Ghost-text inline suggestions displayed directly in the editor as you type
 - Prefix/suffix context sent to the model via configurable FIM prompt template

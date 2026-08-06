@@ -2,16 +2,14 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-基于 LLM 的 VS Code 代码补全插件 — 同时支持 **GHOST**（中间填充）内联补全和 **NES**（下一步编辑建议）预测性编辑。
+基于 LLM 的 VS Code 代码补全插件 — 同时支持 **GHOST** FIM 内联补全和 **NES** 预测性编辑。
 
 [English](README.md)
 
-> [!note]
-> 由于 vscode api 变动，NES 可能在 `1.125 ~ 1.131` 间的 vscode 版本无法正常工作。且 api 在最新版仓库仍然有变动，因此将在 `1.132` 之后的版本适配。
 
 ## 功能特性
 
-### GHOST — Fill-in-the-Middle (FIM) 内联补全
+### GHOST — FIM (Fill in the Middle) Inline Completion
 
 - 在编辑器中以幽灵文本形式呈现内联补全建议
 - 通过可配置的 FIM 提示模板将前缀/后缀上下文发送给模型
@@ -19,7 +17,7 @@
 - 可配置相似度阈值的后缀重叠裁剪
 - 缓存与防抖机制，确保流畅的用户体验
 
-### NES — 下一步编辑建议
+### NES — Next Edit Suggestion
 
 - 预测开发者在当前文件中**下一步的编辑位置和内容**（不限于光标位置）
 - 围绕光标进行**编辑窗口**解析，支持合并冲突标记感知

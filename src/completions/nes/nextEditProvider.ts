@@ -63,7 +63,7 @@ export class NextEditProvider implements INesProvider, vscode.InlineCompletionIt
         position: vscode.Position,
         _context: vscode.InlineCompletionContext,
         token: vscode.CancellationToken,
-    ): Promise<vscode.InlineCompletionItem[] | vscode.InlineCompletionList | undefined> {
+    ): Promise<NesCompletionList | undefined> {
         if (!this._config.enabled) {
             this._log.debug(`[NES]  DISABLED`);
             return undefined;
@@ -189,10 +189,17 @@ export class NextEditProvider implements INesProvider, vscode.InlineCompletionIt
             showInlinedDiff: !isInlineCompletion,
             shouldBeInlineEdit: true,
             info,
+            action: undefined,
+            supportsRename: false,
+            correlationId: requestUuid,
         };
 
         if (result.displayLocation) {
-            item.displayLocation = result.displayLocation;
+            item.displayLocation = {
+                range: result.displayLocation.range,
+                label: result.displayLocation.label,
+                kind: 1,
+            };
         }
         this._log.info(`[NES]  INLINE_EDIT — showing inline suggestion`);
         return new NesCompletionList(requestUuid, [item]);
