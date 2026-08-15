@@ -167,11 +167,9 @@ export class WordPatternManager {
             }
         }
 
-        // dispose 已不再配置的语言（还原原生），并替换注册表
-        for (const [lang, d] of this._registrations) {
-            if (!next.has(lang)) {
-                d.dispose();
-            }
+        // dispose 所有旧注册：已移除配置的语言 → 还原原生；仍配置的语言 → 替换前释放（避免泄漏）
+        for (const d of this._registrations.values()) {
+            d.dispose();
         }
         this._registrations.clear();
         for (const [lang, d] of next) {

@@ -106,6 +106,42 @@ suite('WordPatternManager integration (fake setLanguageConfiguration)', () => {
         await config.update('wordPatterns', undefined, vscode.ConfigurationTarget.Global);
     });
 
+    test('changing a language pattern disposes prior registration (no leak, restores native)', async () => {
+        const calls: { lang: string; pattern: string }[] = [];
+        const disposed: { lang: string; pattern: string }[] = [];
+        const fakeSet = (lang: string, conf: { wordPattern: RegExp }) => {
+            calls.push({ lang, pattern: conf.wordPattern.source });
+            return { dispose: () => disposed.push({ lang, pattern: conf.wordPattern.source }) };
+        };
+        const log = { info: () => {}, warn: () => {}, error: () => {}, debug: () => {}, show: () => {} } as any;
+        const manager = new WordPatternManager(log, fakeSet);
+        const config = vscode.workspace.getConfiguration('cc-completion');
+
+        // 1. 配置 x+ → 注册
+        await config.update('wordPatterns', { plaintext: 'x+' }, vscode.ConfigurationTarget.Global);
+        const sub = manager.register();
+        await waitUntil(() => calls.some(c => c.lang === 'plaintext' && c.pattern.includes('x+')));
+
+        // 2. 改为 y+ → 应重新注册，且旧的 x+ 注册必须先 dispose（不泄漏）
+        await config.update('wordPatterns', { plaintext: 'y+' }, vscode.ConfigurationTarget.Global);
+        await waitUntil(() => calls.some(c => c.lang === 'plaintext' && c.pattern.includes('y+')));
+        await waitUntil(() => disposed.some(d => d.lang === 'plaintext' && d.pattern.includes('x+')));
+
+        // 3. 移除配置 → 应 dispose 最新的 y+ 注册（还原原生）
+        await config.update('wordPatterns', {}, vscode.ConfigurationTarget.Global);
+        await waitUntil(() => disposed.some(d => d.lang === 'plaintext' && d.pattern.includes('y+')));
+
+        // 断言：两次注册（x+、y+）的 disposable 全部被 dispose，无一泄漏
+        const plaintextDisposed = disposed.filter(d => d.lang === 'plaintext');
+        assert.strictEqual(plaintextDisposed.length, 2, 'both registrations must be disposed');
+        assert.ok(plaintextDisposed.some(d => d.pattern.includes('x+')), 'first registration (x+) must be disposed');
+        assert.ok(plaintextDisposed.some(d => d.pattern.includes('y+')), 'second registration (y+) must be disposed');
+        assert.strictEqual(calls.filter(c => c.lang === 'plaintext').length, 2, 'plaintext must be registered twice');
+
+        sub.dispose();
+        await config.update('wordPatterns', undefined, vscode.ConfigurationTarget.Global);
+    });
+
     test('invalid regex or empty-matching branch is skipped without throwing', async () => {
         const calls: string[] = [];
         const fakeSet = (lang: string) => { calls.push(lang); return { dispose: () => {} }; };
