@@ -5,6 +5,7 @@ import { IInstantiationService } from './di/instantiation';
 // Config
 import { IGhostConfigProvider, VSCodeGhostConfigProvider } from './config/ghostConfig';
 import { INesConfigProvider, VSCodeNesConfigProvider } from './config/nesConfig';
+import { WordPatternManager } from './config/wordPatternManager';
 
 // Shared
 import { ILogService, LogService } from './completions/shared/log/logService';
@@ -45,6 +46,11 @@ export function activate(context: vscode.ExtensionContext) {
     // === Config (direct instances, with context for workspaceState) ===
     const ghostConfig = new VSCodeGhostConfigProvider(context);
     const nesConfig = new VSCodeNesConfigProvider(context);
+
+    // === WordPattern (global, independent of ghost/nes enabled state) ===
+    const wordPatternManager = new WordPatternManager(logService);
+    context.subscriptions.push(wordPatternManager.register());
+
     builder.define(IGhostConfigProvider, ghostConfig);
     builder.define(INesConfigProvider, nesConfig);
 
