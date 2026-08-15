@@ -16,7 +16,7 @@
 4. 键 `"*"` 表示备用配置：对**没有显式键**的语言生效。语言级键优先级高于 `"*"`（互斥，`"*"` 只是备用）。
 5. 用户删除某语言键 → 该语言回退到 `"*"` 的当前值（若配置了 `"*"`），否则**不干预**（恢复原生行为，因为该语言从未被注册过 wordPattern）。
 6. 修改配置**即时生效**（无需重载窗口）。
-7. 用户配置值支持 `/body/flags` 包装或裸 body；拼接时**忽略 flags，只提取 body**（JS 无法让 flags 只作用于 alternation 中的单个分支）。
+7. 用户配置值支持 `/body/flags` 包装或裸 body；拼接时**忽略 flags，只提取 body**（JS 无法让 flags 只作用于 alternation 中的单个分支）。**插件输出的 wordPattern 一律不带任何 flags，尤其不带 `g`**——带 `g` 的全局正则会携带 `lastIndex` 状态，VS Code 的匹配逻辑（如 `acceptNextWord`）会对带状态的正则产生异常行为。用户配置中的 `/.../g` 也会被剥离，只取 body。
 
 ## 方案
 
@@ -75,8 +75,8 @@ const BUILTIN_WORD_PATTERN = '(?:[\\u4e00-\\u9fff]|[a-zA-Z0-9_]+|\\s+)';
 
 | 函数 | 行为 |
 |------|------|
-| `parseRegexFragment(input)` | 剥离 `/.../flags` 包装，返回 `{ body }`。判定规则（评审 8）：**以 `/` 开头且最后一个 `/` 之后只含 flag 字符（`a-zA-Z`）** → 视为包装形态；否则整体视为裸 body。空串/body 为空 → `undefined` 并记日志 |
-| `buildPattern(userBody?)` | 返回类型统一为 `RegExp \| undefined`（评审 4）：`undefined`（无用户分支）→ `undefined`（该语言**不注册**，保持原生）；有分支 → `new RegExp('(?:' + userBody + '|' + BUILTIN_WORD_PATTERN + ')')`。统一不带 flags |
+| `parseRegexFragment(input)` | 剥离 `/.../flags` 包装，返回 `{ body }`。判定规则（评审 8）：**以 `/` 开头且最后一个 `/` 之后只含 flag 字符（`a-zA-Z`）** → 视为包装形态；否则整体视为裸 body。**flags（含 `g`）一律剥离丢弃**。空串/body 为空 → `undefined` 并记日志 |
+| `buildPattern(userBody?)` | 返回类型统一为 `RegExp \| undefined`（评审 4）：`undefined`（无用户分支）→ `undefined`（该语言**不注册**，保持原生）；有分支 → `new RegExp('(?:' + userBody + '|' + BUILTIN_WORD_PATTERN + ')')`。**构造时不传任何 flags，绝不带 `g`**（带 `g` 的 lastIndex 状态会导致 VS Code 分词异常） |
 | `resolveUserFragment(lang, config)` | 语言级键 → `"*"` 键 → `undefined` |
 
 **空匹配检测（评审 4）**：`buildPattern` 内部对用户分支做启发式检查——`new RegExp('(?:' + userBody + ')').test('')` 为 `true` 则判定该分支可匹配空串，返回 `undefined`（拒绝）。理由：wordPattern 匹配空串会导致 `acceptNextWord` 死循环（wrap.md 已验证）。启发式覆盖常见情形（`a*`、`(a|)` 等），复杂度可控。
@@ -161,6 +161,7 @@ VS Code 运行时：acceptNextWord / 双击选词 / Ctrl+Right 使用该 wordPat
 | 用例 | 断言 |
 |------|------|
 | `parseRegexFragment('/abc/gi')` | `{ body: 'abc' }`（flags 被忽略） |
+| `parseRegexFragment('/abc/g')` | `{ body: 'abc' }`（**`g` flag 被剥离**，不进入 body） |
 | `parseRegexFragment('abc')` | `{ body: 'abc' }` |
 | `parseRegexFragment('a/b')` | `{ body: 'a/b' }`（不以 `/` 开头 → 裸 body，评审 8） |
 | `parseRegexFragment('/')` | `undefined`（以 `/` 开头但无 flag 字符段） |
@@ -169,6 +170,7 @@ VS Code 运行时：acceptNextWord / 双击选词 / Ctrl+Right 使用该 wordPat
 | `buildPattern('[\\u4e00-\\u9fff。，]')` | `RegExp` 源码含 `(?:用户|内置)` 且用户在前 |
 | `buildPattern('a*')` | `undefined`（空匹配拒绝，评审 4） |
 | `buildPattern('a+')` | `RegExp`（非空匹配，接受） |
+| `buildPattern(...)` 输出的 `RegExp.flags` | `''`（**绝无 `g`**，杜绝 lastIndex 状态） |
 | `resolveUserFragment('python', { '*': 'a', 'python': 'b' })` | `'b'`（语言级优先） |
 | `resolveUserFragment('go', { '*': 'a', 'python': 'b' })` | `'a'`（`"*"` 备用） |
 | `resolveUserFragment('go', { 'python': 'b' })` | `undefined`（不注册，评审 2） |
@@ -192,6 +194,6 @@ VS Code 运行时：acceptNextWord / 双击选词 / Ctrl+Right 使用该 wordPat
 - **语言注册无法被精确监听**：VS Code 没有 `onDidChangeLanguages` 事件（评审 1）。插件用 `vscode.extensions.onDidChange`（尽力而为）+ 文档打开时惰性补注册作为近似。
 - **`setLanguageConfiguration` 按语言全局生效**：自定义 wordPattern 会影响该语言的双击选词、Ctrl+Right 等所有依赖 wordPattern 的功能，**无法**做到只在 inline completion accept word 时生效（VS Code 平台限制）。因此插件**只注册用户配置过的语言**（评审 2），未配置语言保持原生，最大限度缩小影响面。
 - **`setLanguageConfiguration` 是合并而非整体替换**：扩展设置的 `wordPattern` 覆盖原生值，但 `brackets`/`comments`/`onEnterRules`/`autoClosingPairs` 等其他语言配置**保留**，不会误伤。
-- **`getWordAtText` 自动补 `g` flag**：VS Code 内部会给缺 `g` 的正则自动补上，因此"统一不带 flags"是安全的。
+- **wordPattern 绝不带 `g` flag**：插件输出的 wordPattern 一律不带 flags，尤其不带 `g`。带 `g` 的全局正则会携带 `lastIndex` 状态，VS Code 的 `acceptNextWord` 等匹配逻辑会对带状态的正则产生异常。用户配置中的 `g` 会被剥离（`/.../g` → 只取 body）。
 - **用户配置的 flags 被忽略**：拼接语义下无法让 flags 只作用于 alternation 的单个分支（JS 正则限制）。
 - **`buildPattern` 拒绝可匹配空串的分支**：`a*`、`(a|)` 等分支会被拒绝并跳过（避免 `acceptNextWord` 死循环），文档中应提示用户避免。
