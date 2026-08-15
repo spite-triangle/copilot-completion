@@ -1,15 +1,16 @@
 import * as vscode from 'vscode';
 import { ILogService } from '../completions/shared/log/logService';
-export const BUILTIN_WORD_PATTERN = '(?:[\\u4e00-\\u9fff]|[a-zA-Z0-9_]+|\\s+)';
 
 export interface ParsedFragment {
-    body: string;
+    expression: string;
+    /** 包装形态中解析出的 flags；裸 body 或未提供 flags 时为 undefined。 */
+    flags?: string;
 }
 
 /**
- * 剥离 /.../flags 包装（flags 一律丢弃，尤其 g），或按裸 body 处理。
+ * 剥离 /.../flags 包装并解析 flags，或按裸 body 处理。
  * 规则：以 / 开头且最后一个 / 之后只含 flag 字符（a-zA-Z）→ 包装形态；
- *      以 / 开头但不满足 → 非法（undefined）；否则整体为裸 body。
+ *      以 / 开头但不满足 → 非法（undefined）；否则整体为裸 body（无 flags 字段）。
  */
 export function parseRegexFragment(input: string): ParsedFragment | undefined {
     if (typeof input !== 'string') {
@@ -23,21 +24,25 @@ export function parseRegexFragment(input: string): ParsedFragment | undefined {
         if (lastSlash > 0) {
             const flags = input.slice(lastSlash + 1);
             if (/^[a-zA-Z]*$/.test(flags)) {
-                const body = input.slice(1, lastSlash);
-                if (body.length === 0) {
+                const expression = input.slice(1, lastSlash);
+                if (expression.length === 0) {
                     return undefined;
                 }
-                return { body };
+                if (flags.length > 0) {
+                    return { expression: expression, flags };
+                }
+                return { expression: expression };
             }
         }
         return undefined;
     }
-    return { body: input };
+    return { expression: input };
 }
 
 /**
  * 返回最终 wordPattern：undefined → 该语言不注册（保持原生）。
- * 用户分支在前、内置兜底在后；统一不带 flags（绝无 g）。
+ * 用户分支在前、内置兜底在后；flags 透传但剥离有状态的 g（g 的 lastIndex
+ * 状态会破坏 VS Code 分词）；无 flags 时构造不传第二参数。
  * 空匹配分支与非法正则 → undefined（拒绝）。
  */
 export function buildPattern(input: string | undefined): RegExp | undefined {
@@ -48,15 +53,16 @@ export function buildPattern(input: string | undefined): RegExp | undefined {
     if (parsed === undefined) {
         return undefined;
     }
-    const body = parsed.body;
+    const expression = parsed.expression;
+    const flags = parsed.flags?.replace(/g/g, '') || undefined;
     try {
-        if (new RegExp('(?:' + body + ')').test('')) {
+        if (new RegExp(expression).test('')) {
             return undefined; // 空匹配拒绝
         }
+        return flags ? new RegExp(expression, flags) : new RegExp(expression);
     } catch {
-        return undefined; // 非法正则
+        return undefined; // 非法正则（body 或 flags 不合法）
     }
-    return new RegExp('(?:' + body + '|' + BUILTIN_WORD_PATTERN + ')');
 }
 
 /** 语言级键优先，其次 "*"，否则 undefined（不注册）。 */
@@ -163,6 +169,7 @@ export class WordPatternManager {
         }
 
         const next = new Map<string, vscode.Disposable>();
+        
         for (const lang of languages) {
             if (this._disposed) {
                 break;

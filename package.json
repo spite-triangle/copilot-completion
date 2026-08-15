@@ -2,7 +2,7 @@
   "name": "copilot-completions",
   "displayName": "Copilot Completions",
   "description": "Code completion powered by LLM — GHOST (FIM Inline Completion) and NES (Next Edit Suggestion)",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "engines": {
     "vscode": "^1.132.0"
   },
@@ -48,7 +48,7 @@
         "cc-completion.wordPatterns": {
           "type": "object",
           "default": {},
-          "description": "Per-language wordPattern additions (appended to the built-in pattern, not replacing it). Only languages with an explicit key (or the \"*\" fallback) are affected; other languages keep their native wordPattern. Keys are language IDs; \"*\" is a fallback for languages without an explicit key. Values are regex fragments, optionally wrapped as /fragment/flags (flags are ignored).",
+          "description": "Per-language wordPattern additions (appended to the built-in pattern, not replacing it). Only languages with an explicit key (or the \"*\" fallback) are affected; other languages keep their native wordPattern. Keys are language IDs; \"*\" is a fallback for languages without an explicit key. Values are regex fragments, optionally wrapped as /fragment/flags (non-g flags like i/m/u are applied; the stateful g flag is stripped).",
           "additionalProperties": { "type": "string" }
         },
         "cc-completion.ghost.baseUrl": {

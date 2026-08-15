@@ -8,5 +8,6 @@ node_modules
 .superpowers/
 .codegraph/
 .claude/
+.worktrees
 docs/copilot
 .mcp.json

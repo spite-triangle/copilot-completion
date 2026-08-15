@@ -1,7 +1,6 @@
 import * as assert from 'assert';
 import * as vscode from 'vscode';
 import {
-    BUILTIN_WORD_PATTERN,
     parseRegexFragment,
     buildPattern,
     resolveUserFragment,
@@ -10,20 +9,22 @@ import {
 
 suite('wordPattern pure logic', () => {
 
-    test('parseRegexFragment strips /.../flags wrapper and ignores flags', () => {
-        assert.deepStrictEqual(parseRegexFragment('/abc/gi'), { body: 'abc' });
-        assert.deepStrictEqual(parseRegexFragment('/abc/g'), { body: 'abc' });
+    test('parseRegexFragment strips /.../flags wrapper and parses flags', () => {
+        assert.deepStrictEqual(parseRegexFragment('/abc/gi'), { expression: 'abc', flags: 'gi' });
+        assert.deepStrictEqual(parseRegexFragment('/abc/g'), { expression: 'abc', flags: 'g' });
+        assert.deepStrictEqual(parseRegexFragment('/abc/'), { expression: 'abc' }); // 空 flags 段 → 无 flags 字段
     });
 
-    test('parseRegexFragment treats non-slash-prefixed input as bare body', () => {
-        assert.deepStrictEqual(parseRegexFragment('abc'), { body: 'abc' });
-        assert.deepStrictEqual(parseRegexFragment('a/b'), { body: 'a/b' });
+    test('parseRegexFragment treats non-slash-prefixed input as bare expression', () => {
+        assert.deepStrictEqual(parseRegexFragment('abc'), { expression: 'abc' });
+        assert.deepStrictEqual(parseRegexFragment('a/b'), { expression: 'a/b' });
     });
 
     test('parseRegexFragment rejects invalid forms', () => {
         assert.strictEqual(parseRegexFragment(''), undefined);
         assert.strictEqual(parseRegexFragment('/'), undefined);
         assert.strictEqual(parseRegexFragment('/abc'), undefined); // 以 / 开头但无尾 / + flags 段
+        assert.strictEqual(parseRegexFragment('/abc/1'), undefined); // 非法 flag 字符
     });
 
     test('buildPattern returns undefined when no user branch (language not registered)', () => {
@@ -37,8 +38,16 @@ suite('wordPattern pure logic', () => {
     test('buildPattern prepends user branch before builtin, without g flag', () => {
         const re = buildPattern('[\\u4e00-\\u9fff。，]');
         assert.ok(re instanceof RegExp);
-        assert.strictEqual(re.source, '(?:[\\u4e00-\\u9fff。，]|' + BUILTIN_WORD_PATTERN + ')');
-        assert.strictEqual(re.flags, ''); // 绝无 g
+        assert.strictEqual(re.source, '(?:[\\u4e00-\\u9fff。，])');
+        assert.strictEqual(re.flags, ''); // 无 flags 时构造不传第二参
+    });
+
+    test('buildPattern passes non-g flags through and strips g', () => {
+        assert.strictEqual(buildPattern('/abc/i')?.flags, 'i');
+        assert.strictEqual(buildPattern('/abc/im')?.flags, 'im');
+        assert.strictEqual(buildPattern('/abc/gi')?.flags, 'i'); // g 剥离，i 保留
+        assert.strictEqual(buildPattern('/abc/g')?.flags, '');    // 仅 g → 无 flags
+        assert.strictEqual(buildPattern('/abc/uu'), undefined);   // 非法 flags 组合 → undefined
     });
 
     test('buildPattern rejects empty-matching branches', () => {
