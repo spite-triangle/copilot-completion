@@ -12,6 +12,9 @@ export interface ParsedFragment {
  *      以 / 开头但不满足 → 非法（undefined）；否则整体为裸 body。
  */
 export function parseRegexFragment(input: string): ParsedFragment | undefined {
+    if (typeof input !== 'string') {
+        return undefined;
+    }
     if (input.length === 0) {
         return undefined;
     }
@@ -38,7 +41,7 @@ export function parseRegexFragment(input: string): ParsedFragment | undefined {
  * 空匹配分支与非法正则 → undefined（拒绝）。
  */
 export function buildPattern(input: string | undefined): RegExp | undefined {
-    if (input === undefined) {
+    if (typeof input !== 'string') {
         return undefined;
     }
     const parsed = parseRegexFragment(input);
@@ -70,6 +73,7 @@ export function resolveUserFragment(lang: string, config: Record<string, string>
 export class WordPatternManager {
     private readonly _registrations = new Map<string, vscode.Disposable>();
     private _generation = 0;
+    private _disposed = false;
     private readonly _setLanguageConfiguration: (lang: string, conf: { wordPattern: RegExp }) => vscode.Disposable;
 
     constructor(
@@ -106,6 +110,7 @@ export class WordPatternManager {
 
         return {
             dispose: () => {
+                this._disposed = true;
                 for (const d of disposables) {
                     d.dispose();
                 }
@@ -133,6 +138,9 @@ export class WordPatternManager {
     }
 
     private async applyAll(): Promise<void> {
+        if (this._disposed) {
+            return;
+        }
         const generation = ++this._generation;
 
         let config: Record<string, string>;
@@ -150,12 +158,15 @@ export class WordPatternManager {
             this._log.error(`[WordPattern] getLanguages failed: ${String(e)}`);
             return;
         }
-        if (generation !== this._generation) {
-            return; // 过期结果丢弃（竞态防护）
+        if (this._disposed || generation !== this._generation) {
+            return; // 过期结果丢弃（竞态防护）；已 dispose 则不再注册
         }
 
         const next = new Map<string, vscode.Disposable>();
         for (const lang of languages) {
+            if (this._disposed) {
+                break;
+            }
             const fragment = resolveUserFragment(lang, config);
             const pattern = buildPattern(fragment);
             if (pattern) {
@@ -164,6 +175,8 @@ export class WordPatternManager {
                 } catch (e) {
                     this._log.error(`[WordPattern] setLanguageConfiguration failed for ${lang}: ${String(e)}`);
                 }
+            } else if (fragment !== undefined) {
+                this._log.warn(`[WordPattern] skipped ${lang}: invalid or empty-matching fragment`);
             }
         }
 
