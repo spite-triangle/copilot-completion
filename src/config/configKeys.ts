@@ -1,4 +1,5 @@
 export const ConfigKeys = {
+    wordPatterns: 'cc-completion.wordPatterns',
     Ghost: {
         enabled: 'cc-completion.ghost.enabled',
         baseUrl: 'cc-completion.ghost.baseUrl',

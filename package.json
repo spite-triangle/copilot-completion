@@ -45,6 +45,12 @@
     "configuration": {
       "title": "CC Completion",
       "properties": {
+        "cc-completion.wordPatterns": {
+          "type": "object",
+          "default": {},
+          "description": "Per-language wordPattern additions (appended to the built-in pattern, not replacing it). Only languages with an explicit key (or the \"*\" fallback) are affected; other languages keep their native wordPattern. Keys are language IDs; \"*\" is a fallback for languages without an explicit key. Values are regex fragments, optionally wrapped as /fragment/flags (flags are ignored).",
+          "additionalProperties": { "type": "string" }
+        },
         "cc-completion.ghost.baseUrl": {
           "type": "string",
           "default": "",
