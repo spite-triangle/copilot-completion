@@ -1,3 +1,5 @@
+import * as vscode from 'vscode';
+import { ILogService } from '../completions/shared/log/logService';
 export const BUILTIN_WORD_PATTERN = '(?:[\\u4e00-\\u9fff]|[a-zA-Z0-9_]+|\\s+)';
 
 export interface ParsedFragment {
@@ -63,4 +65,117 @@ export function resolveUserFragment(lang: string, config: Record<string, string>
         return config['*'];
     }
     return undefined;
+}
+
+export class WordPatternManager {
+    private readonly _registrations = new Map<string, vscode.Disposable>();
+    private _generation = 0;
+    private readonly _setLanguageConfiguration: (lang: string, conf: { wordPattern: RegExp }) => vscode.Disposable;
+
+    constructor(
+        private readonly _log: ILogService,
+        setLanguageConfiguration?: (lang: string, conf: { wordPattern: RegExp }) => vscode.Disposable,
+    ) {
+        this._setLanguageConfiguration = setLanguageConfiguration ?? vscode.languages.setLanguageConfiguration;
+    }
+
+    register(): vscode.Disposable {
+        void this.applyAll();
+
+        const disposables: vscode.Disposable[] = [
+            vscode.workspace.onDidChangeConfiguration(e => {
+                if (e.affectsConfiguration('cc-completion.wordPatterns')) {
+                    void this.applyAll();
+                }
+            }),
+            vscode.extensions.onDidChange(() => {
+                // 插件安装/卸载/更新可能注册新语言；尽力而为（无 onDidChangeLanguages 事件）
+                void this.applyAll();
+            }),
+            vscode.workspace.onDidOpenTextDocument(doc => {
+                // 惰性补注册：语言已在但插件激活后才打开文档
+                if (!this._registrations.has(doc.languageId)) {
+                    const fragment = resolveUserFragment(doc.languageId, this._getConfig());
+                    const pattern = buildPattern(fragment);
+                    if (pattern) {
+                        this._applyOne(doc.languageId, pattern);
+                    }
+                }
+            }),
+        ];
+
+        return {
+            dispose: () => {
+                for (const d of disposables) {
+                    d.dispose();
+                }
+                for (const d of this._registrations.values()) {
+                    d.dispose();
+                }
+                this._registrations.clear();
+            },
+        };
+    }
+
+    private _getConfig(): Record<string, string> {
+        return vscode.workspace.getConfiguration('cc-completion')
+            .get<Record<string, string>>('wordPatterns', {});
+    }
+
+    private _applyOne(lang: string, pattern: RegExp): void {
+        try {
+            const d = this._setLanguageConfiguration(lang, { wordPattern: pattern });
+            this._registrations.get(lang)?.dispose();
+            this._registrations.set(lang, d);
+        } catch (e) {
+            this._log.error(`[WordPattern] setLanguageConfiguration failed for ${lang}: ${String(e)}`);
+        }
+    }
+
+    private async applyAll(): Promise<void> {
+        const generation = ++this._generation;
+
+        let config: Record<string, string>;
+        try {
+            config = this._getConfig();
+        } catch (e) {
+            this._log.error(`[WordPattern] failed to read config: ${String(e)}`);
+            return;
+        }
+
+        let languages: string[];
+        try {
+            languages = await vscode.languages.getLanguages();
+        } catch (e) {
+            this._log.error(`[WordPattern] getLanguages failed: ${String(e)}`);
+            return;
+        }
+        if (generation !== this._generation) {
+            return; // 过期结果丢弃（竞态防护）
+        }
+
+        const next = new Map<string, vscode.Disposable>();
+        for (const lang of languages) {
+            const fragment = resolveUserFragment(lang, config);
+            const pattern = buildPattern(fragment);
+            if (pattern) {
+                try {
+                    next.set(lang, this._setLanguageConfiguration(lang, { wordPattern: pattern }));
+                } catch (e) {
+                    this._log.error(`[WordPattern] setLanguageConfiguration failed for ${lang}: ${String(e)}`);
+                }
+            }
+        }
+
+        // dispose 已不再配置的语言（还原原生），并替换注册表
+        for (const [lang, d] of this._registrations) {
+            if (!next.has(lang)) {
+                d.dispose();
+            }
+        }
+        this._registrations.clear();
+        for (const [lang, d] of next) {
+            this._registrations.set(lang, d);
+        }
+    }
 }
