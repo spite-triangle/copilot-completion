@@ -201,5 +201,31 @@ function tryConvergeAt(
         newLinesIdx--;
     }
 
+    // Fallback mirroring the reference's ResponseProcessor.checkForConvergence:
+    // when every original line from divergence to the anchor match is accounted
+    // for by the response (pure replacement, no skipped lines —
+    // `convEndIdx - divergenceStart === newLines.length - 1`), the reference marks
+    // the convergence as significant BEFORE walking backwards and keeps that result
+    // even if the backward walk fails on the first step (e.g. a single-line fix
+    // re-emitted with its trailing lines). The loop above only converges inside the
+    // walk, so without this fallback the divergence would be emitted as one giant
+    // edit swallowing the rest of the edit window.
+    if (newLines.length >= 2 && nSigMatches >= N_SIGNIFICANT_LINES_TO_CONVERGE) {
+        // Converge on the anchor line alone (matches the reference's fixed
+        // `match = candidates[0]`): the trailing anchor line is preserved and only
+        // the lines before it are treated as inserted.
+        const nLinesToConverge = 1;
+        const nLinesRemoved = convEndIdx - divergenceStart;
+        const linesInserted = newLines.slice(0, newLines.length - nLinesToConverge);
+        const nLinesInserted = linesInserted.length;
+
+        // Reject convergence that removes far more original lines than inserted
+        if (nLinesRemoved - nLinesInserted > 1 && nLinesInserted > 0) {
+            return undefined;
+        }
+
+        return { origConvIdx: convEndIdx, nConvergingLines: nLinesToConverge };
+    }
+
     return undefined;
 }

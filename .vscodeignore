@@ -13,8 +13,8 @@ vsc-extension-quickstart.md
 **/*.ts
 **/.vscode-test.*
 docs/
-docs/
 .claude
 .codegraph/
 .superpowers/
 .traces/
+.nes-diag/

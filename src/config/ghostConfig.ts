@@ -109,7 +109,7 @@ export class VSCodeGhostConfigProvider implements IGhostConfigProvider {
     }
 
     get maxOutputTokens(): number {
-        return this._cached<number>(ConfigKeys.Ghost.maxOutputTokens, 512);
+        return this._cached<number>(ConfigKeys.Ghost.maxOutputTokens, 256);
     }
 
     get delay(): number {

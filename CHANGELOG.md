@@ -1,5 +1,10 @@
 # Change Log
 
+## 1.2.2 (2026-08-18)
+- 修复 `NES` 中 `recently_viewed_code_snippet` 未显示最新代码片段的问题
+- **新增在新版`vscode` 中开启 `NES` 的配置说明**
+- 调整 `Token` 默认参数配置
+
 ## 1.2.1 (2026-08-17)
 - 增加 `wordPattern` 自定义
 

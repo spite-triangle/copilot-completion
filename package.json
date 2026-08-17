@@ -2,7 +2,7 @@
   "name": "copilot-completions",
   "displayName": "Copilot Completions",
   "description": "Code completion powered by LLM — GHOST (FIM Inline Completion) and NES (Next Edit Suggestion)",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "engines": {
     "vscode": "^1.132.0"
   },
@@ -81,7 +81,7 @@
         },
         "cc-completion.ghost.capabilities.limits.max_output_tokens": {
           "type": "number",
-          "default": 512,
+          "default": 256,
           "description": "Max output tokens for GHOST (hard cap)"
         },
         "cc-completion.ghost.capabilities.limits.max_context_window_tokens": {
@@ -165,7 +165,7 @@
         },
         "cc-completion.nes.capabilities.limits.max_output_tokens": {
           "type": "number",
-          "default": 4800,
+          "default": 6800,
           "description": "Max output tokens for NES (hard cap)"
         },
         "cc-completion.nes.promptTemplate": {

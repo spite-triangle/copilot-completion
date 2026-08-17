@@ -11,3 +11,4 @@ node_modules
 .worktrees
 docs/copilot
 .mcp.json
+.nes-diag

@@ -129,7 +129,7 @@ export class VSCodeNesConfigProvider implements INesConfigProvider {
     }
 
     get maxOutputTokens(): number {
-        return this._cached<number>(ConfigKeys.Nes.maxOutputTokens, 4800);
+        return this._cached<number>(ConfigKeys.Nes.maxOutputTokens, 6800);
     }
 
     get suffixOverlapThreshold(): number {

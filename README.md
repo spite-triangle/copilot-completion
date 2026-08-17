@@ -6,6 +6,26 @@ Code completion VS Code extension powered by LLMs — supporting both **GHOST** 
 
 [中文文档](README.zh-CN.md)
 
+## Enable NES
+
+>[!note]
+> Because latest VS Code has tightened its permission controls, the `NES` feature APIs are restricted to internal extensions only; hence, **you must manually enable the `Proposals` permissions**.
+
+1. Find `product.json` in the VS Code installation directory
+2. Add the following configuration to `product.json`:
+
+    ```json
+    {
+        "extensionEnabledApiProposals": {
+            // ...
+            "young-triangle.copilot-completions":[
+                "inlineCompletionsAdditions"
+            ],
+            // ...
+        }
+    }
+    ```
+3. Restart VS Code to apply the changes.
 
 ## Features
 
@@ -76,6 +96,16 @@ The official built-in default configuration is as follows:
         "jsonc": "(-?\\d*\\.\\d\\w*)|([^\\`\\@\\~\\!\\%\\^\\&\\*\\(\\)\\-\\=\\+\\[\\{\\]\\}\\\\\\|\\;\\:\\'\\\"\\,\\.\\<\\>\\/\\?\\s]+)",
         "json": "(-?\\d*\\.\\d\\w*)|([^\\`\\@\\~\\!\\%\\^\\&\\*\\(\\)\\-\\=\\+\\[\\{\\]\\}\\\\\\|\\;\\:\\'\\\"\\,\\.\\<\\>\\/\\?\\s]+)"
     }
+}
+```
+
+**example**: Implement character-by-character confirmation for Chinese
+
+```json
+{
+    "cc-completion.wordPatterns": {
+        "*": "(-?\\d*\\.\\d\\w*)|(-?[\u4e00-\u9fa5])|([^\\；\\，\\、\\’\\‘\\：\u4e00-\u9fa5\\“\\”\\【\\】\\？\\`\\~\\!\\@\\#\\%\\^\\&\\*\\(\\)\\-\\=\\+\\[\\{\\]\\}\\\\\\|\\;\\:\\'\\\"\\,\\.\\<\\>\\/\\?\\s]+)"
+    },
 }
 ```
 

@@ -58,7 +58,7 @@ export class PromptAssembler {
             lintOptions: { enable: lintEnable, tagName: 'diagnostics', warnings: LintOptionWarning.NO, showCode: LintOptionShowCode.NO, maxLints: 10, maxLineDistance: 50, nRecentFiles: 3 },
             neighborFiles: { enabled: false, maxTokens: 2000 },
             pagedClipping: { pageSize: 50 },
-            diffHistory: { onlyForDocsInPrompt: true, maxTokens: 2000, nEntries: 15, useRelativePaths: true },
+            diffHistory: { onlyForDocsInPrompt: true, maxTokens: 2000, nEntries: 10, useRelativePaths: true },
         };
 
         const taggedR = constructTaggedFile(currentDocument, ewRange, areaAroundEditWindowLinesRange, promptOptions, computeTokens, {

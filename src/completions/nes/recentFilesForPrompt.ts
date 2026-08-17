@@ -108,7 +108,7 @@ function collectRecentDocuments(
     const result: IXtabHistoryEntry[] = [];
     const seenDocuments = new Set<DocumentId>();
 
-    for (let i = xtabHistory.length - 1; i >= 0; --i) {
+    for (let i = 0; i < xtabHistory.length; ++i) {
         const entry = xtabHistory[i];
 
         if (!includeViewedFiles && entry.kind === 'visibleRanges') {
@@ -147,7 +147,7 @@ function collectRecentDocumentsGrouped(
     const docOrder: DocumentId[] = [];
     const docEntries = new Map<DocumentId, IXtabHistoryEntry[]>();
 
-    for (let i = xtabHistory.length - 1; i >= 0; --i) {
+    for (let i = 0; i < xtabHistory.length; ++i) {
         const entry = xtabHistory[i];
 
         if (!includeViewedFiles && entry.kind === 'visibleRanges') {
@@ -573,7 +573,7 @@ function buildCodeSnippetsGreedy(
         }
     }
 
-    return { snippets: result.snippets.reverse(), docsInPrompt: result.docsInPrompt };
+    return { snippets: result.snippets, docsInPrompt: result.docsInPrompt };
 }
 
 /**
@@ -643,5 +643,5 @@ function buildCodeSnippetsWithProportionalBudget(
         }
     }
 
-    return { snippets: result.snippets.reverse(), docsInPrompt: result.docsInPrompt };
+    return { snippets: result.snippets, docsInPrompt: result.docsInPrompt };
 }

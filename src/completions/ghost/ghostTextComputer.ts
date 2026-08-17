@@ -206,8 +206,8 @@ export class GhostTextComputer {
             afterAccept,
         });
         const requestMultiline = await this.multilineStrategy.determineMultiline(multilineCtx);
-        const maxTokens = Math.min(this._config.maxOutputTokens, 512);
-        const effectiveTokens = Math.min(requestMultiline ? maxTokens : 64, maxTokens);
+        const maxTokens = Math.min(this._config.maxOutputTokens, 256);
+        const effectiveTokens = Math.min(requestMultiline ? maxTokens : 32, maxTokens);
         this._log.debug(`[GHOST] strategy multiline=${requestMultiline} tokens=${effectiveTokens}/${maxTokens}`);
 
         // Step 8: Network request with rate limiting + AbortController
