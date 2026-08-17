@@ -2,7 +2,7 @@
   "name": "copilot-completions",
   "displayName": "Copilot Completions",
   "description": "Code completion powered by LLM — GHOST (FIM Inline Completion) and NES (Next Edit Suggestion)",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "engines": {
     "vscode": "^1.132.0"
   },
@@ -30,9 +30,7 @@
     "onStartupFinished"
   ],
   "enabledApiProposals": [
-    "inlineCompletionsAdditions",
-    "aiRelatedInformation",
-    "documentFiltersExclusive"
+    "inlineCompletionsAdditions"
   ],
   "main": "./dist/extension.js",
   "contributes": {

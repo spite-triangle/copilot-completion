@@ -9,20 +9,13 @@ Code completion VS Code extension powered by LLMs — supporting both **GHOST** 
 ## Enable NES
 
 >[!note]
-> Because latest VS Code has tightened its permission controls, the `NES` feature APIs are restricted to internal extensions only; hence, **you must manually enable the `Proposals` permissions**.
+> Because latest VS Code has tightened its permission controls, the `NES` feature APIs are restricted to internal extensions only; hence, **you must manually enable the [Proposals API](https://code.visualstudio.com/api/advanced-topics/using-proposed-api)**.
 
-1. Find `product.json` in the VS Code installation directory
-2. Add the following configuration to `product.json`:
-
+1. `ctrl + shift + p` and type `Preferences: Configure Runtime Arguments`
+2. Add the following line to the `argv.json` file:
     ```json
     {
-        "extensionEnabledApiProposals": {
-            // ...
-            "young-triangle.copilot-completions":[
-                "inlineCompletionsAdditions"
-            ],
-            // ...
-        }
+        "enable-proposed-api": ["young-triangle.copilot-completions"]
     }
     ```
 3. Restart VS Code to apply the changes.

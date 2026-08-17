@@ -6,25 +6,20 @@
 
 [English](README.md)
 
+## 启动 NES
 
 >[!note]
-> 在最新版的 `vscode` 中，已经将 `NES` 的 API 接口彻底关闭，只允许内部插件访问。**因此，需要手动开启 `NES` 需要的 `Proposal` 权限。**
+> 在最新版的 `vscode` 中，已经将 `NES` 的 `API` 接口彻底关闭，只允许内部插件访问。**因此，需要手动开启 `NES` 需要的 [Proposal API](https://code.visualstudio.com/api/advanced-topics/using-proposed-api)。**
 
-1. 在 `vscode` 的安装目录下找到 `product.json` 配置
-2. 在 `product.json` 中添加以下配置项：
-
+1. `ctrl + shift + p` 运行 `Preferences: Configure Runtime Arguments` 命令
+2. 将下列配置添加到 `argv.json` 中
     ```json
     {
-        "extensionEnabledApiProposals": {
-            // ...
-            "young-triangle.copilot-completions":[
-                "inlineCompletionsAdditions"
-            ],
-            // ...
-        }
+        "enable-proposed-api": ["young-triangle.copilot-completions"]
     }
     ```
-3. 重启 `vscode` 即可生效。
+3. 重启 `vscode`
+
 
 ## 功能特性
 

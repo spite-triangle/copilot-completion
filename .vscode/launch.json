@@ -10,7 +10,8 @@
 			"type": "extensionHost",
 			"request": "launch",
 			"args": [
-				"--extensionDevelopmentPath=${workspaceFolder}"
+				"--extensionDevelopmentPath=${workspaceFolder}",
+				"--enable-proposed-api=young-triangle.copilot-completions"
 			],
 			"outFiles": [
 				"${workspaceFolder}/dist/**/*.js"

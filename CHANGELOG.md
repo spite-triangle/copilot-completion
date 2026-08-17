@@ -1,5 +1,8 @@
 # Change Log
 
+## 1.2.3 (2026-08-18)
+- 使用官方的 `proposed API` 启动方案
+
 ## 1.2.2 (2026-08-18)
 - 修复 `NES` 中 `recently_viewed_code_snippet` 未显示最新代码片段的问题
 - **新增在新版`vscode` 中开启 `NES` 的配置说明**
