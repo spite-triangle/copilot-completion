@@ -111,6 +111,7 @@
 | `ghost.apiKey` | `string` | `""` | API 密钥 |
 | `ghost.model` | `string` | `"gpt-4o"` | 模型名称 |
 | `ghost.stops` | `string[]` | `[]` | 响应生成的停止序列 |
+| `ghost.endpoint` | `"fim/completions"`,`"completions"`  | `"completions"` | LLM API 端点 |
 | `ghost.promptTemplate` | `string` | `<\|fim_prefix\|>{prefix}<\|fim_suffix\|>{suffix}<\|fim_middle\|>` | FIM 提示模板 |
 | `ghost.capabilities.limits.max_output_tokens` | `number` | `512` | 最大输出 token 数（硬上限） |
 | `ghost.capabilities.limits.max_context_window_tokens` | `number` | `128000` | 最大上下文窗口 token 数 |
@@ -128,7 +129,7 @@
 | `nes.baseUrl` | `string` | `""` | API 基础 URL |
 | `nes.apiKey` | `string` | `""` | API 密钥 |
 | `nes.model` | `string` | `"gpt-4o"` | 模型名称 |
-| `nes.supportedEndpoint` | `"chat/completions"` | `"chat/completions"` | LLM API 端点 |
+| `nes.endpoint` | `"chat/completions"`,`"completions"` | `"chat/completions"` | LLM API 端点 |
 | `nes.family` | `"standard"` \| `"openai-o"` \| `"openai-gpt5"` \| `"deepseek"` \| `"qwen"` | `"standard"` | NES 思维模式对应的模型家族 |
 | `nes.capabilities.limits.max_output_tokens` | `number` | `8192` | 最大输出 token 数（硬上限） |
 | `nes.capabilities.limits.max_context_window_tokens` | `number` | `128000` | 最大上下文窗口 token 数 |
@@ -146,29 +147,6 @@
 | 命令 | 描述 |
 |---|---|
 | `CC Completion: Toggle Panel` | 切换状态栏面板可见性 |
-
-## 系统要求
-
-- VS Code `^1.110.0`
-
-## 开发指南
-
-```bash
-# 安装依赖
-npm install
-
-# 编译
-npm run compile
-
-# 监视模式
-npm run watch
-
-# 生产构建
-npm run package
-
-# 代码检查
-npm run lint
-```
 
 ## 项目架构
 

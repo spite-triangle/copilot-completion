@@ -110,6 +110,7 @@ The official built-in default configuration is as follows:
 | `ghost.apiKey` | `string` | `""` | API key |
 | `ghost.model` | `string` | `"gpt-4o"` | Model name |
 | `ghost.stops` | `string[]` | `[]` | Stop sequences for response generation |
+| `ghost.endpoint` | `"fim/completions"`,`"completions"`  | `"completions"` | LLM API endpoint |
 | `ghost.promptTemplate` | `string` | `<\|fim_prefix\|>{prefix}<\|fim_suffix\|>{suffix}<\|fim_middle\|>` | FIM prompt template |
 | `ghost.capabilities.limits.max_output_tokens` | `number` | `512` | Max output tokens (hard cap) |
 | `ghost.capabilities.limits.max_context_window_tokens` | `number` | `128000` | Max context window tokens |
@@ -127,7 +128,7 @@ The official built-in default configuration is as follows:
 | `nes.baseUrl` | `string` | `""` | API base URL |
 | `nes.apiKey` | `string` | `""` | API key |
 | `nes.model` | `string` | `"gpt-4o"` | Model name |
-| `nes.supportedEndpoint` | `"chat/completions"` | `"chat/completions"` | LLM API endpoint |
+| `nes.endpoint` | `"chat/completions"`,`"completions"`  | `"chat/completions"` | LLM API endpoint |
 | `nes.family` | `"standard"` \| `"openai-o"` \| `"openai-gpt5"` \| `"deepseek"` \| `"qwen"` | `"standard"` | Model family for NES thinking mode |
 | `nes.capabilities.limits.max_output_tokens` | `number` | `8192` | Max output tokens (hard cap) |
 | `nes.capabilities.limits.max_context_window_tokens` | `number` | `128000` | Max context window tokens |
@@ -146,29 +147,6 @@ The official built-in default configuration is as follows:
 | Command | Description |
 |---|---|
 | `CC Completion: Toggle Panel` | Toggle the status bar panel visibility |
-
-## Requirements
-
-- VS Code `^1.110.0`
-
-## Development
-
-```bash
-# Install dependencies
-npm install
-
-# Compile
-npm run compile
-
-# Watch mode
-npm run watch
-
-# Production build
-npm run package
-
-# Lint
-npm run lint
-```
 
 ## Architecture
 
