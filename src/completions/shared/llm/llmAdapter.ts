@@ -4,6 +4,8 @@ import { NesSupportedEndpoint } from '../../../config/nesConfig';
 
 export const ILLMAdapterManager = createServiceIdentifier<ILLMAdapterManager>('ILLMAdapterManager');
 
+export type LLMEndpoint = NesSupportedEndpoint | 'completions' | 'fim/completions';
+
 export interface ILLMAdapter {
     send(request: LLMRequest, signal?: AbortSignal): Promise<LLMResponse>;
     /** Streaming variant: yields text deltas, returns the completed LLMResponse. */
@@ -46,8 +48,8 @@ export function applyThinkingParams(
 
 export interface ILLMAdapterManager {
     readonly _serviceBrand: undefined;
-    register(endpoint: NesSupportedEndpoint | 'completions', adapter: ILLMAdapter): void;
-    getAdapter(endpoint: NesSupportedEndpoint | 'completions'): ILLMAdapter;
+    register(endpoint: LLMEndpoint, adapter: ILLMAdapter): void;
+    getAdapter(endpoint: LLMEndpoint): ILLMAdapter;
 }
 
 export class LLMAdapterManager implements ILLMAdapterManager {

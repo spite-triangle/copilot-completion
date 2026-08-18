@@ -2,7 +2,7 @@
   "name": "copilot-completions",
   "displayName": "Copilot Completions",
   "description": "Code completion powered by LLM — GHOST (FIM Inline Completion) and NES (Next Edit Suggestion)",
-  "version": "1.2.3",
+  "version": "1.2.4",
   "engines": {
     "vscode": "^1.132.0"
   },
@@ -63,6 +63,15 @@
           "type": "string",
           "default": "gpt-4o",
           "description": "GHOST model name"
+        },
+        "cc-completion.ghost.endpoint": {
+          "type": "string",
+          "enum": [
+            "completions",
+            "fim/completions"
+          ],
+          "default": "completions",
+          "description": "LLM API endpoint for GHOST. 'completions' uses /completions with an inline FIM prompt template; 'fim/completions' uses /fim/completions with separate prompt and suffix."
         },
         "cc-completion.ghost.stops": {
           "type": "array",
@@ -140,7 +149,7 @@
           "default": "gpt-4o",
           "description": "NES model name"
         },
-        "cc-completion.nes.supportedEndpoint": {
+        "cc-completion.nes.endpoint": {
           "type": "string",
           "enum": [
             "chat/completions",
@@ -163,7 +172,7 @@
         },
         "cc-completion.nes.capabilities.limits.max_output_tokens": {
           "type": "number",
-          "default": 6800,
+          "default": 9216,
           "description": "Max output tokens for NES (hard cap)"
         },
         "cc-completion.nes.promptTemplate": {

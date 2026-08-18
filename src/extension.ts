@@ -14,6 +14,7 @@ import { OpenAIChatCompletionAdapter } from './completions/shared/llm/openaiChat
 import { OpenAIResponseAdapter } from './completions/shared/llm/openaiResponseAdapter';
 import { AnthropicAdapter } from './completions/shared/llm/anthropicAdapter';
 import { OpenAICompletionAdapter } from './completions/shared/llm/openaiCompletionAdapter';
+import { OpenAIFimCompletionAdapter } from './completions/shared/llm/openaiFimCompletionAdapter';
 
 // GHOST
 import { IGhostPromptFactory, GhostPromptFactory } from './completions/ghost/promptFactory';
@@ -106,9 +107,9 @@ function registerLLMAdapters(
         accessor.get(ILLMAdapterManager),
     );
 
-    // GHOST: always completions
     llmManager.register('completions', new OpenAICompletionAdapter(log));
     llmManager.register('chat/completions', new OpenAIChatCompletionAdapter());
+    llmManager.register('fim/completions', new OpenAIFimCompletionAdapter(log));
 }
 
 export function deactivate() {}

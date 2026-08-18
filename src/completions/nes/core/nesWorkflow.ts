@@ -160,7 +160,7 @@ export class NesWorkflow {
 
         // Step 3: Network request (streaming)
         const t4 = Date.now();
-        const endpoint = this._config.supportedEndpoint;
+        const endpoint = this._config.endpoint;
         const adapter = this._llmManager.getAdapter(endpoint);
         const abortController = new AbortController();
         const headerRequestId = `nes-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;

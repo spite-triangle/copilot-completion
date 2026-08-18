@@ -42,10 +42,10 @@
 
 ### 支持的 LLM 后端
 
-| 适配器 | API 端点 | 适用场景 |
-|---|---|---|
-| `OpenAIChatAdapter` | `/chat/completions` | NES |
-| `OpenAICompletionAdapter` | `/completions` | 原生 FIM (GHOST) |
+| 模式 | API 端点 | 
+|---|---|
+| NES | `/chat/completions, /completions` | 
+| GHOST | `/completions, /fim/completions` | 
 
 
 > [!tip]

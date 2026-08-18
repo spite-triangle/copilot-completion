@@ -2,6 +2,8 @@ import * as vscode from 'vscode';
 import { createServiceIdentifier } from '../di/services';
 import { ConfigKeys } from './configKeys';
 
+export type GhostEndpoint = 'completions' | 'fim/completions';
+
 export interface GhostCapabilities {
     limits: {
         max_output_tokens: number;
@@ -18,6 +20,7 @@ export interface IGhostConfigProvider {
     get baseUrl(): string;
     get apiKey(): string;
     get model(): string;
+    get endpoint(): GhostEndpoint;
     get stops(): string[];
     get promptTemplate(): string;
     get capabilities(): GhostCapabilities;
@@ -80,6 +83,10 @@ export class VSCodeGhostConfigProvider implements IGhostConfigProvider {
 
     get model(): string {
         return this._cached<string>(ConfigKeys.Ghost.model, 'gpt-4o');
+    }
+
+    get endpoint(): GhostEndpoint {
+        return this._cached<GhostEndpoint>(ConfigKeys.Ghost.endpoint, 'completions');
     }
 
     get stops(): string[] {

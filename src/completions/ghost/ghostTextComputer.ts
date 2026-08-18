@@ -251,7 +251,8 @@ export class GhostTextComputer {
             lastRequestTime = Date.now();
         }
 
-        const adapter = this._llmManager.getAdapter('completions');
+        const llmEndpoint = this._config.endpoint === 'fim/completions' ? 'fim/completions' : 'completions';
+        const adapter = this._llmManager.getAdapter(llmEndpoint);
         const ourRequestId = `ghost-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
         const asyncCancellationTokenSource = { cancel: () => abortController.abort() };
 
@@ -262,7 +263,10 @@ export class GhostTextComputer {
                     baseUrl: this._config.baseUrl,
                     apiKey: this._config.apiKey,
                     model: this._config.model,
-                    prompt,
+                    // FIM 端点需要原始 prefix 作 prompt + 独立 suffix（服务端自行套 FIM 模板）；
+                    // completions 端点沿用渲染好的 <|fim_*|> prompt。
+                    prompt: llmEndpoint === 'fim/completions' ? prefix : prompt,
+                    suffix: llmEndpoint === 'fim/completions' ? suffix : undefined,
                     max_tokens: effectiveTokens,
                     temperature: 0,
                     stop: (requestMultiline ? ['\n\n',"\n```"] : ['\n']).concat(this._config.stops),

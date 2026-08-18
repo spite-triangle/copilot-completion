@@ -1,5 +1,9 @@
 # Change Log
 
+## 1.2.4 (2026-08-18)
+- `GHOST` 支持 `/v1/fim/completions` 接口
+- 调整 `NES` 中 `recently_viewed_code_snippet` 的截断算法
+
 ## 1.2.3 (2026-08-18)
 - 使用官方的 `proposed API` 启动方案
 

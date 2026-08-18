@@ -42,10 +42,10 @@ Code completion VS Code extension powered by LLMs — supporting both **GHOST** 
 
 ### Supported LLM Backends
 
-| Adapter | API Endpoint | Best For |
-|---|---|---|
-| `OpenAIChatAdapter` | `/chat/completions, /completions` | NES |
-| `OpenAICompletionAdapter` | `/completions` | Native FIM (GHOST) |
+| Mode | API Endpoint | 
+|---|---|
+| NES | `/chat/completions, /completions` |
+| GHOST | `/completions, /fim/completions` |
 
 > [!tip]
 > - `Qwen2.5 coder` is good performance for `GHOST`, which can run in local and provide better suggestion.

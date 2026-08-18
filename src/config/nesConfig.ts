@@ -25,7 +25,7 @@ export interface INesConfigProvider {
     get apiKey(): string;
     get model(): string;
     get family(): string;
-    get supportedEndpoint(): NesSupportedEndpoint;
+    get endpoint(): NesSupportedEndpoint;
     get capabilities(): NesCapabilities;
     get maxOutputTokens(): number;
     get suffixOverlapThreshold(): number;
@@ -105,8 +105,8 @@ export class VSCodeNesConfigProvider implements INesConfigProvider {
         return this._cached<string>(ConfigKeys.Nes.model, 'gpt-4o');
     }
 
-    get supportedEndpoint(): NesSupportedEndpoint {
-        return this._cached<NesSupportedEndpoint>(ConfigKeys.Nes.supportedEndpoint, 'chat/completions');
+    get endpoint(): NesSupportedEndpoint {
+        return this._cached<NesSupportedEndpoint>(ConfigKeys.Nes.endpoint, 'chat/completions');
     }
 
     get capabilities(): NesCapabilities {
@@ -129,7 +129,7 @@ export class VSCodeNesConfigProvider implements INesConfigProvider {
     }
 
     get maxOutputTokens(): number {
-        return this._cached<number>(ConfigKeys.Nes.maxOutputTokens, 6800);
+        return this._cached<number>(ConfigKeys.Nes.maxOutputTokens, 9216);
     }
 
     get suffixOverlapThreshold(): number {

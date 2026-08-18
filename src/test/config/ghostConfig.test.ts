@@ -40,6 +40,23 @@ suite('VSCodeGhostConfigProvider', () => {
         );
     });
 
+    test('returns default endpoint when no config set', () => {
+        const provider = new VSCodeGhostConfigProvider(mockContext());
+        assert.strictEqual(provider.endpoint, 'completions');
+    });
+
+    test('returns updated endpoint after config change invalidates cache', async () => {
+        const provider = new VSCodeGhostConfigProvider(mockContext());
+        const config = vscode.workspace.getConfiguration('cc-completion.ghost');
+
+        assert.strictEqual(provider.endpoint, 'completions');
+
+        await config.update('endpoint', 'fim/completions', vscode.ConfigurationTarget.Global);
+        assert.strictEqual(provider.endpoint, 'fim/completions');
+
+        await config.update('endpoint', undefined, vscode.ConfigurationTarget.Global);
+    });
+
     test('enabled is independent of settings.json cache', () => {
         const provider = new VSCodeGhostConfigProvider(mockContext());
 

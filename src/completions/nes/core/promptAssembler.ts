@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { INesConfigProvider } from '../../../config/nesConfig';
+import {RecentFileClippingStrategy} from '../stubs/types';
 import { PromptingStrategy, PromptOptions, IncludeLineNumbersOption, AggressivenessLevel, LintOptionWarning, LintOptionShowCode, DocumentId, StatelessNextEditDocument } from '../stubs/types';
 import { IXtabHistoryEntry } from '../stubs/types';
 import { constructTaggedFile, getUserPrompt, PromptPieces, N_LINES_AS_CONTEXT } from '../promptCrafting';
@@ -52,7 +53,7 @@ export class PromptAssembler {
             promptingStrategy: PromptingStrategy.Xtab275,
             includePostScript: true,
             includeEditCode: true,
-            recentlyViewedDocuments: { maxTokens: 2000, nDocuments: 10, includeViewedFiles: true, clippingStrategy: 'TopToBottom' as any, includeLineNumbers: IncludeLineNumbersOption.None },
+            recentlyViewedDocuments: { maxTokens: 2000, nDocuments: 10, includeViewedFiles: true, clippingStrategy: RecentFileClippingStrategy.AroundEditRange, includeLineNumbers: IncludeLineNumbersOption.None },
             currentFile: { includeCursorTag: true, includeLineNumbers: IncludeLineNumbersOption.None, maxTokens: 4000, prioritizeAboveCursor: true, includeTags: false },
             languageContext: { maxTokens: 2000, traitPosition: 'before' },
             lintOptions: { enable: lintEnable, tagName: 'diagnostics', warnings: LintOptionWarning.NO, showCode: LintOptionShowCode.NO, maxLints: 10, maxLineDistance: 50, nRecentFiles: 3 },

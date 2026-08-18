@@ -7,7 +7,7 @@ import { ILogService } from '../shared/log/logService';
 import { renderCompletionPrompt } from './promptCraftingUtils';
 import { PromptingStrategy, IncludeLineNumbersOption, PromptOptions, LintOptionWarning, LintOptionShowCode } from './stubs/types';
 import { constructTaggedFile, getUserPrompt, PromptPieces } from './promptCrafting';
-import { OffsetRange } from './stubs/offsetRange';
+import { RecentFileClippingStrategy } from './stubs/types';
 import { Result } from '../../common/result';
 
 
@@ -73,8 +73,8 @@ export class NextCursorPredictor {
             promptingStrategy: PromptingStrategy.Xtab275,
             includePostScript: false,
             includeEditCode: false,
-            recentlyViewedDocuments: { maxTokens: 2000, nDocuments: 10, includeViewedFiles: true, clippingStrategy: 'TopToBottom' as any, includeLineNumbers: IncludeLineNumbersOption.None },
-            currentFile: { includeCursorTag: true, includeLineNumbers: IncludeLineNumbersOption.None, maxTokens: 4000, prioritizeAboveCursor: true, includeTags: false },
+            recentlyViewedDocuments: { maxTokens: 2000, nDocuments: 10, includeViewedFiles: true, clippingStrategy: RecentFileClippingStrategy.AroundEditRange, includeLineNumbers: IncludeLineNumbersOption.None },
+            currentFile: { includeCursorTag: true, includeLineNumbers: IncludeLineNumbersOption.None, maxTokens: 4000, prioritizeAboveCursor: false, includeTags: false },
             languageContext: { maxTokens: 2000, traitPosition: 'before' },
             lintOptions: { enable: true, tagName: 'diagnostics', warnings: LintOptionWarning.NO, showCode: LintOptionShowCode.NO, maxLints: 10, maxLineDistance: 50, nRecentFiles: 3 },
             neighborFiles: { enabled: false, maxTokens: 2000 },
@@ -100,7 +100,7 @@ export class NextCursorPredictor {
         const { prompt: userMessage } = getUserPrompt(newPromptPieces);
 
         try {
-            const endpoint = this._config.supportedEndpoint;
+            const endpoint = this._config.endpoint;
             const adapter = this._llmManager.getAdapter(endpoint);
             const abortController = new AbortController();
             const cancelListener = token?.onCancellationRequested(() => abortController.abort());

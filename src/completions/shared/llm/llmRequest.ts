@@ -20,6 +20,7 @@ export interface LLMRequest {
     family?: string;
     messages?: ChatMessage[];
     prompt?: string;
+    suffix?:string;
     max_tokens: number;
     temperature: number;
     n?: number;

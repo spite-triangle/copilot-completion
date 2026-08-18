@@ -11,6 +11,7 @@ export interface SSEChunk {
         index: number;
         text?: string;
         delta?: { content: string | null };
+        message?: { content?: string | null; prefix?: boolean; role?: string };
         finish_reason?: string | null;
     }>;
     model?: string;
